@@ -257,6 +257,24 @@ public static class Strings
     public static string Diag_Notifications => Get("Diag.Notifications");
     public static string Diag_ErrorGettingData => Get("Diag.ErrorGettingData");
     public static string Diag_NoLogsFound => Get("Diag.NoLogsFound");
+    public static string Diag_LatencyServiceUnavailable => Get("Diag.LatencyServiceUnavailable");
+    public static string Diag_NoA2dpDevice => Get("Diag.NoA2dpDevice");
+    public static string Diag_LatencyQueryFailed => Get("Diag.LatencyQueryFailed");
+    public static string Diag_DeviceLabel => Get("Diag.DeviceLabel");
+    public static string Diag_CurrentBuffer => Get("Diag.CurrentBuffer");
+    public static string Diag_MinBuffer => Get("Diag.MinBuffer");
+    public static string Diag_MaxBuffer => Get("Diag.MaxBuffer");
+    public static string Diag_SampleRate => Get("Diag.SampleRate");
+    public static string Diag_AudioEngineBuffer => Get("Diag.AudioEngineBuffer");
+    public static string Diag_PolicyConfigBuffer => Get("Diag.PolicyConfigBuffer");
+
+    public static string Diag_EncoderServiceNotInit => Get("Diag.EncoderServiceNotInit");
+    public static string Diag_EncoderServiceNotRunning => Get("Diag.EncoderServiceNotRunning");
+    public static string Diag_EncoderServiceError => Get("Diag.EncoderServiceError");
+    public static string Diag_EncoderStatus => Get("Diag.EncoderStatus");
+    public static string Diag_EncoderRunning => Get("Diag.EncoderRunning");
+    public static string Diag_EncoderReady => Get("Diag.EncoderReady");
+    public static string Diag_FramesEncoded => Get("Diag.FramesEncoded");
 
     public static string App_Application => Get("App.Application");
 
@@ -273,6 +291,46 @@ public static class Strings
     public static string Adapter_SwitchSuccess => Get("Adapter.SwitchSuccess");
     public static string Adapter_SwitchFailed => Get("Adapter.SwitchFailed");
     public static string Adapter_Refresh => Get("Adapter.Refresh");
+
+    public static string Feature_Title => Get("Feature.Title");
+    public static string Feature_Description => Get("Feature.Description");
+    public static string Feature_SmartTransition => Get("Feature.SmartTransition");
+    public static string Feature_SmartTransition_Desc => Get("Feature.SmartTransition.Desc");
+    public static string Feature_WifiCoexistence => Get("Feature.WifiCoexistence");
+    public static string Feature_WifiCoexistence_Desc => Get("Feature.WifiCoexistence.Desc");
+    public static string Feature_WifiCoexistence_Tooltip => Get("Feature.WifiCoexistence.Tooltip");
+    public static string Feature_WifiPowerSaving => Get("Feature.WifiPowerSaving");
+    public static string Feature_WifiPowerSaving_Desc => Get("Feature.WifiPowerSaving.Desc");
+    public static string Feature_WifiPowerSaving_Tooltip => Get("Feature.WifiPowerSaving.Tooltip");
+    public static string Feature_ProcessingPeriod => Get("Feature.ProcessingPeriod");
+    public static string Feature_ProcessingPeriod_Desc => Get("Feature.ProcessingPeriod.Desc");
+    public static string Feature_LatencyQuery => Get("Feature.LatencyQuery");
+    public static string Feature_LatencyQuery_Desc => Get("Feature.LatencyQuery.Desc");
+    public static string Feature_LdacRegistry => Get("Feature.LdacRegistry");
+    public static string Feature_LdacRegistry_Desc => Get("Feature.LdacRegistry.Desc");
+    public static string Feature_ExternalEncoder => Get("Feature.ExternalEncoder");
+    public static string Feature_ExternalEncoder_Desc => Get("Feature.ExternalEncoder.Desc");
+    public static string Feature_ExternalEncoder_Tooltip => Get("Feature.ExternalEncoder.Tooltip");
+    public static string Encoder_Codec => Get("Encoder.Codec");
+    public static string Encoder_Quality => Get("Encoder.Quality");
+    public static string Encoder_Apply => Get("Encoder.Apply");
+    public static string Feature_Status_Active => Get("Feature.Status.Active");
+    public static string Feature_Status_Available => Get("Feature.Status.Available");
+    public static string Feature_Status_Unavailable => Get("Feature.Status.Unavailable");
+    public static string Feature_Status_Error => Get("Feature.Status.Error");
+    public static string Feature_Status_Enabling => Get("Feature.Status.Enabling");
+    public static string Feature_Status_Disabling => Get("Feature.Status.Disabling");
+    public static string Feature_EnableFailed => Get("Feature.EnableFailed");
+    public static string Feature_DisableFailed => Get("Feature.DisableFailed");
+    public static string Feature_ConflictWarning => Get("Feature.ConflictWarning");
+    public static string Feature_RequiresAdmin => Get("Feature.RequiresAdmin");
+    public static string Feature_RequiresBtDevice => Get("Feature.RequiresBtDevice");
+    public static string Feature_ConflictsWithShort => Get("Feature.ConflictsWithShort");
+
+    public static string GetFeatureName(string featureId)
+    {
+        return Get($"Feature.Name.{featureId}");
+    }
 
     private static void InitializeStrings()
     {
@@ -379,8 +437,8 @@ public static class Strings
         Add("About.Description",
             "A2DP Commander — бесплатная утилита для управления Bluetooth аудио профилями (A2DP/HFP) в Windows.\n\nПозволяет быстро переключаться между режимами высокого качества звука и режимом с микрофоном для любых Bluetooth наушников.",
             "A2DP Commander — a free utility for managing Bluetooth audio profiles (A2DP/HFP) in Windows.\n\nAllows you to quickly switch between high-quality audio mode and microphone mode for any Bluetooth headphones.");
-        Add("About.Author", "Автор:", "Author:");
-        Add("About.AuthorName", "Андрей Юмашев", "Andrey Yumashev");
+        Add("About.Author", "Авторы:", "Authors:");
+        Add("About.AuthorName", "Андрей Юмашев, Claude (Anthropic)", "Andrey Yumashev, Claude (Anthropic)");
         Add("About.Support", "Поддержать проект", "Support the Project");
         Add("About.SupportDesc", "Если программа оказалась полезной, вы можете поддержать разработку:", "If you find this program useful, you can support development:");
         Add("About.Copy", "Копировать", "Copy");
@@ -502,8 +560,27 @@ public static class Strings
         Add("Diag.Notifications", "Уведомления", "Notifications");
         Add("Diag.ErrorGettingData", "Ошибка получения данных", "Error getting data");
         Add("Diag.NoLogsFound", "Логи не найдены", "No logs found");
+        Add("Diag.LatencyServiceUnavailable", "Сервис латентности недоступен (требуется Windows 10+)", "Latency service unavailable (requires Windows 10+)");
+        Add("Diag.NoA2dpDevice", "A2DP устройство не найдено", "A2DP device not found");
+        Add("Diag.LatencyQueryFailed", "Ошибка запроса латентности", "Latency query failed");
+        Add("Diag.DeviceLabel", "Устройство", "Device");
+        Add("Diag.CurrentBuffer", "Текущий буфер", "Current buffer");
+        Add("Diag.MinBuffer", "Мин. буфер", "Min buffer");
+        Add("Diag.MaxBuffer", "Макс. буфер", "Max buffer");
+        Add("Diag.SampleRate", "Частота дискретизации", "Sample rate");
+        Add("Diag.AudioEngineBuffer", "Audio Engine (IAudioClient3)", "Audio Engine (IAudioClient3)");
+        Add("Diag.PolicyConfigBuffer", "PolicyConfig (системный)", "PolicyConfig (system)");
+
+        Add("Diag.EncoderServiceNotInit", "Сервис кодирования не инициализирован", "Encoder service not initialized");
+        Add("Diag.EncoderServiceNotRunning", "Сервис кодирования не запущен", "Encoder service not running");
+        Add("Diag.EncoderServiceError", "Ошибка получения статуса сервиса кодирования", "Error getting encoder service status");
+        Add("Diag.EncoderStatus", "Статус", "Status");
+        Add("Diag.EncoderRunning", "Кодирование активно", "Encoding active");
+        Add("Diag.EncoderReady", "Готов к работе", "Ready");
+        Add("Diag.FramesEncoded", "Закодировано фреймов", "Frames encoded");
 
         Add("App.Application", "приложение", "application");
+        Add("App.AlreadyRunning", "A2DP Commander уже запущен", "A2DP Commander is already running");
 
         Add("Adapter.Title", "Bluetooth адаптер", "Bluetooth Adapter");
         Add("Adapter.Select", "Выберите активный адаптер:", "Select active adapter:");
@@ -519,6 +596,128 @@ public static class Strings
         Add("Adapter.SwitchSuccess", "Адаптер переключён. Перезагрузите компьютер для применения изменений.", "Adapter switched. Restart your computer to apply changes.");
         Add("Adapter.SwitchFailed", "Не удалось переключить адаптер. Требуются права администратора.", "Failed to switch adapter. Administrator rights required.");
         Add("Adapter.Refresh", "Обновить список", "Refresh list");
+
+        Add("Feature.Title", "Расширенные функции", "Advanced Features");
+        Add("Feature.Description", "Дополнительные оптимизации для улучшения качества звука", "Additional optimizations to improve audio quality");
+
+        Add("Feature.SmartTransition", "Плавный переход", "Smart Transition");
+        Add("Feature.SmartTransition.Desc", "Плавное переключение между A2DP и HFP без разрыва соединения", "Smooth switching between A2DP and HFP without disconnection");
+
+        Add("Feature.WifiCoexistence", "Wi-Fi совместимость", "Wi-Fi Coexistence");
+        Add("Feature.WifiCoexistence.Desc", "Оптимизация совместной работы Bluetooth и Wi-Fi для уменьшения помех", "Optimize Bluetooth and Wi-Fi coexistence to reduce interference");
+        Add("Feature.WifiCoexistence.Tooltip",
+            "ОТКЛЮЧАЕТ опцию 'Bluetooth Collaboration' на Wi-Fi адаптере.\n\n" +
+            "ЧТО ЭТО ДЕЛАЕТ:\n" +
+            "• Предотвращает паузы Wi-Fi при Bluetooth передаче\n" +
+            "• Уменьшает interference на частоте 2.4 GHz\n\n" +
+            "РИСКИ:\n" +
+            "⚠️ НА COMBO-АДАПТЕРАХ (Wi-Fi + BT на одном чипе):\n" +
+            "   Если вы используете BT этого же адаптера — могут быть\n" +
+            "   помехи при одновременной работе Wi-Fi и BT.\n\n" +
+            "✅ БЕЗОПАСНО если:\n" +
+            "   • Вы используете отдельный USB BT-адаптер\n" +
+            "   • Или используете Wi-Fi на 5 GHz (не 2.4 GHz)\n" +
+            "   • Или не используете Wi-Fi вообще\n\n" +
+            "Настройка применяется через реестр Windows.\n" +
+            "Требуются права администратора.",
+            "DISABLES 'Bluetooth Collaboration' option on Wi-Fi adapter.\n\n" +
+            "WHAT IT DOES:\n" +
+            "• Prevents Wi-Fi pauses during Bluetooth transmission\n" +
+            "• Reduces interference on 2.4 GHz frequency\n\n" +
+            "RISKS:\n" +
+            "⚠️ ON COMBO ADAPTERS (Wi-Fi + BT on same chip):\n" +
+            "   If you use BT from this adapter — there may be\n" +
+            "   interference when Wi-Fi and BT work simultaneously.\n\n" +
+            "✅ SAFE if:\n" +
+            "   • You use a separate USB BT adapter\n" +
+            "   • Or use Wi-Fi on 5 GHz (not 2.4 GHz)\n" +
+            "   • Or don't use Wi-Fi at all\n\n" +
+            "Setting is applied via Windows registry.\n" +
+            "Administrator rights required.");
+
+        Add("Feature.WifiPowerSaving", "Энергосбережение Wi-Fi/BT", "Wi-Fi/BT Power Saving");
+        Add("Feature.WifiPowerSaving.Desc", "Отключение энергосбережения Wi-Fi и Bluetooth для стабильности звука", "Disable Wi-Fi and Bluetooth power saving for audio stability");
+        Add("Feature.WifiPowerSaving.Tooltip",
+            "ОТКЛЮЧАЕТ режим энергосбережения Wi-Fi и Bluetooth адаптеров.\n\n" +
+            "ЧТО ЭТО ДЕЛАЕТ:\n" +
+            "• Предотвращает переход Wi-Fi в спящий режим\n" +
+            "• Отключает энергосбережение Bluetooth\n" +
+            "• Стабилизирует latency сети и аудио\n" +
+            "• Уменьшает микро-фризы и запинания\n\n" +
+            "РИСКИ:\n" +
+            "⚠️ Немного увеличивает энергопотребление\n" +
+            "   (актуально только для ноутбуков на батарее)\n\n" +
+            "✅ БЕЗОПАСНО:\n" +
+            "   • Не влияет на функциональность\n" +
+            "   • Легко откатить обратно\n" +
+            "   • Рекомендуется для десктопов\n\n" +
+            "Настройка применяется через реестр Windows.\n" +
+            "Требуются права администратора.",
+            "DISABLES Wi-Fi and Bluetooth adapter power saving mode.\n\n" +
+            "WHAT IT DOES:\n" +
+            "• Prevents Wi-Fi from entering sleep mode\n" +
+            "• Disables Bluetooth power saving\n" +
+            "• Stabilizes network and audio latency\n" +
+            "• Reduces micro-freezes and stuttering\n\n" +
+            "RISKS:\n" +
+            "⚠️ Slightly increases power consumption\n" +
+            "   (only relevant for laptops on battery)\n\n" +
+            "✅ SAFE:\n" +
+            "   • Does not affect functionality\n" +
+            "   • Easy to roll back\n" +
+            "   • Recommended for desktops\n\n" +
+            "Setting is applied via Windows registry.\n" +
+            "Administrator rights required.");
+
+        Add("Feature.ProcessingPeriod", "Контроль буфера", "Buffer Control");
+        Add("Feature.ProcessingPeriod.Desc", "Настройка размера аудио буфера для уменьшения задержки", "Adjust audio buffer size to reduce latency");
+
+        Add("Feature.LatencyQuery", "Мониторинг задержки", "Latency Monitoring");
+        Add("Feature.LatencyQuery.Desc", "Отслеживание реальной задержки Bluetooth аудио", "Track real Bluetooth audio latency");
+
+        Add("Feature.Experimental", "Экспериментальные функции", "Experimental Features");
+        Add("Feature.Experimental.Warning", "Эти функции находятся в разработке и могут работать нестабильно", "These features are under development and may be unstable");
+
+        Add("Feature.LdacRegistry", "Форсирование кодека (Registry)", "Codec Forcing (Registry)");
+        Add("Feature.LdacRegistry.Desc", "Изменяет настройки реестра для принудительного использования лучшего кодека. Требует перезагрузки.", "Modifies registry settings to force better codec. Requires reboot.");
+        Add("Feature.LdacRegistry.Tooltip", "⚠️ ЭКСПЕРИМЕНТАЛЬНО: Изменяет ключи реестра BthA2dp для принудительного выбора кодека.\n\nМожет не работать с вашим BT-адаптером. Исходные настройки сохраняются и восстанавливаются при отключении.\n\nТребуется перезагрузка для применения изменений.", "⚠️ EXPERIMENTAL: Modifies BthA2dp registry keys to force codec selection.\n\nMay not work with your BT adapter. Original settings are backed up and restored when disabled.\n\nReboot required for changes to take effect.");
+
+        Add("Feature.ExternalEncoder", "Внешний энкодер", "External Encoder");
+        Add("Feature.ExternalEncoder.Desc", "LDAC/aptX кодирование через внешний BT-трансмиттер", "LDAC/aptX encoding via external BT transmitter");
+        Add("Feature.ExternalEncoder.Tooltip", "⚠️ ЭКСПЕРИМЕНТАЛЬНО: Запускает Rust-сервис для кодирования аудио в LDAC/aptX.\n\n⚠️ ТРЕБУЕТСЯ внешний USB Bluetooth трансмиттер с поддержкой LDAC!\n\nРекомендуемые устройства:\n• 1Mii B03Pro (~$30) — aptX HD, LDAC\n• Avantree DG80 (~$40) — aptX LL\n• FiiO BTA30 Pro (~$70) — все кодеки\n• Creative BT-W3 (~$50) — aptX HD\n• Shanling M0 Pro/M1s (~$130) — LDAC", "⚠️ EXPERIMENTAL: Starts Rust service for encoding audio to LDAC/aptX.\n\n⚠️ REQUIRES external USB Bluetooth transmitter with LDAC support!\n\nRecommended devices:\n• 1Mii B03Pro (~$30) — aptX HD, LDAC\n• Avantree DG80 (~$40) — aptX LL\n• FiiO BTA30 Pro (~$70) — all codecs\n• Creative BT-W3 (~$50) — aptX HD\n• Shanling M0 Pro/M1s (~$130) — LDAC");
+
+        Add("Encoder.Codec", "Кодек", "Codec");
+        Add("Encoder.Quality", "Качество", "Quality");
+        Add("Encoder.Apply", "Применить", "Apply");
+        Add("Encoder.NotRunning", "Энкодер не запущен", "Encoder not running");
+        Add("Encoder.SettingsApplied", "Настройки энкодера применены", "Encoder settings applied");
+        Add("Encoder.SettingsFailed", "Не удалось применить настройки энкодера", "Failed to apply encoder settings");
+
+        Add("Feature.Status.Active", "Активна", "Active");
+        Add("Feature.Status.Available", "Доступна", "Available");
+        Add("Feature.Status.Unavailable", "Недоступна", "Unavailable");
+        Add("Feature.Status.Error", "Ошибка", "Error");
+        Add("Feature.Status.Enabling", "Включение...", "Enabling...");
+        Add("Feature.Status.Disabling", "Отключение...", "Disabling...");
+
+        Add("Feature.EnableFailed", "Не удалось включить функцию", "Failed to enable feature");
+        Add("Feature.DisableFailed", "Не удалось отключить функцию", "Failed to disable feature");
+        Add("Feature.ConflictWarning", "Для включения этой функции необходимо отключить: {0}\n\nОтключить конфликтующие функции?", "To enable this feature, the following must be disabled: {0}\n\nDisable conflicting features?");
+        Add("Feature.RequiresAdmin", "Требуются права администратора", "Administrator rights required");
+        Add("Feature.RequiresBtDevice", "Требуется подключённое Bluetooth устройство", "Bluetooth device connection required");
+        Add("Feature.ConflictsWithShort", "Конфликт с: {0}", "Conflicts with: {0}");
+
+        Add("Feature.Name.SmartTransition", "Плавный переход", "Smart Transition");
+        Add("Feature.Name.WifiCoexistence", "Wi-Fi совместимость", "Wi-Fi Coexistence");
+        Add("Feature.Name.WifiPowerSaving", "Энергосбережение Wi-Fi/BT", "Wi-Fi/BT Power Saving");
+        Add("Feature.Name.ProcessingPeriodControl", "Контроль буфера", "Buffer Control");
+        Add("Feature.Name.LatencyQuery", "Мониторинг задержки", "Latency Monitoring");
+        Add("Feature.Name.LdacRegistry", "Форсирование кодека", "Codec Forcing");
+        Add("Feature.Name.ExternalEncoder", "Внешний энкодер", "External Encoder");
+
+        Add("Feature.NoBluetoothAdapter", "BT адаптер не найден", "No BT adapter");
+        Add("Feature.AdapterNoLdac", "Адаптер{0} без LDAC. Нужен USB BT-трансмиттер", "Adapter{0} no LDAC. USB transmitter required");
+        Add("Feature.AdapterNoLdacAptx", "Адаптер{0} без LDAC/aptX HD. Нужен USB BT-трансмиттер", "Adapter{0} no LDAC/aptX HD. USB transmitter required");
     }
 
     private static void Add(string key, string russian, string english)

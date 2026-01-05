@@ -47,6 +47,16 @@
                     <TextBlock Text="{Binding AudioInfo}" TextWrapping="Wrap" FontFamily="Consolas"/>
                 </ScrollViewer>
             </TabItem>
+            <TabItem Header="Латентность">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                    <TextBlock Text="{Binding LatencyInfo}" TextWrapping="Wrap" FontFamily="Consolas"/>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Энкодер">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                    <TextBlock Text="{Binding EncoderInfo}" TextWrapping="Wrap" FontFamily="Consolas"/>
+                </ScrollViewer>
+            </TabItem>
             <TabItem Header="Кодек">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
                     <TextBlock Text="{Binding CodecInfo}" TextWrapping="Wrap" FontFamily="Consolas"/>

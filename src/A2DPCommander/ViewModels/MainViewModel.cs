@@ -4,6 +4,7 @@ using System.IO;
 using BTAudioDriver.Localization;
 using BTAudioDriver.Models;
 using BTAudioDriver.Services;
+using BTAudioDriver.Services.Features;
 using BTAudioDriver.Views;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -23,6 +24,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly IAudioQualityService _audioQualityService;
     private readonly IBluetoothCodecMonitor _codecMonitor;
     private readonly IBluetoothAdapterService _adapterService;
+    private readonly IFeatureManager _featureManager;
+    private readonly IAudioLatencyService _latencyService;
+    private readonly IEncoderService _encoderService;
     private readonly TrayIconManager _trayIcon;
 
     private bool _disposed;
@@ -249,6 +253,97 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     #endregion
 
+    #region Feature Management Properties
+
+    [ObservableProperty]
+    private bool _smartTransitionEnabled;
+
+    [ObservableProperty]
+    private bool _smartTransitionAvailable;
+
+    [ObservableProperty]
+    private string _smartTransitionStatus = "";
+
+    [ObservableProperty]
+    private bool _wifiCoexistenceEnabled;
+
+    [ObservableProperty]
+    private bool _wifiCoexistenceAvailable;
+
+    [ObservableProperty]
+    private string _wifiCoexistenceStatus = "";
+
+    [ObservableProperty]
+    private bool _wifiPowerSavingEnabled;
+
+    [ObservableProperty]
+    private bool _wifiPowerSavingAvailable;
+
+    [ObservableProperty]
+    private string _wifiPowerSavingStatus = "";
+
+    [ObservableProperty]
+    private bool _processingPeriodEnabled;
+
+    [ObservableProperty]
+    private bool _processingPeriodAvailable;
+
+    [ObservableProperty]
+    private string _processingPeriodStatus = "";
+
+    [ObservableProperty]
+    private bool _latencyQueryEnabled;
+
+    [ObservableProperty]
+    private bool _latencyQueryAvailable;
+
+    [ObservableProperty]
+    private string _latencyQueryStatus = "";
+
+    [ObservableProperty]
+    private bool _ldacRegistryEnabled;
+
+    [ObservableProperty]
+    private bool _ldacRegistryAvailable;
+
+    [ObservableProperty]
+    private string _ldacRegistryStatus = "";
+
+    [ObservableProperty]
+    private bool _externalEncoderEnabled;
+
+    [ObservableProperty]
+    private bool _externalEncoderAvailable;
+
+    [ObservableProperty]
+    private string _externalEncoderStatus = "";
+
+    [ObservableProperty]
+    private string _selectedEncoderCodec = "ldac";
+
+    [ObservableProperty]
+    private string _selectedEncoderQuality = "high";
+
+    public List<EncoderCodecOption> EncoderCodecOptions { get; } = new()
+    {
+        new("ldac", "LDAC (990 kbps)"),
+        new("aptx", "aptX (352 kbps)"),
+        new("aptxhd", "aptX HD (576 kbps)"),
+        new("sbc", "SBC (328 kbps)")
+    };
+
+    public List<EncoderQualityOption> EncoderQualityOptions { get; } = new()
+    {
+        new("high", "High (990 kbps)"),
+        new("standard", "Standard (660 kbps)"),
+        new("low", "Low (330 kbps)")
+    };
+
+    [ObservableProperty]
+    private bool _isFeatureOperationInProgress;
+
+    #endregion
+
     public event EventHandler? MinimizeToTrayRequested;
 
     public event EventHandler? ShowMainWindowRequested;
@@ -261,7 +356,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IProcessWatcherService processWatcher,
         IAudioQualityService audioQualityService,
         IBluetoothCodecMonitor codecMonitor,
-        IBluetoothAdapterService adapterService)
+        IBluetoothAdapterService adapterService,
+        IFeatureManager featureManager,
+        IAudioLatencyService latencyService,
+        IEncoderService encoderService)
     {
         _bluetoothService = bluetoothService;
         _audioService = audioService;
@@ -271,6 +369,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _audioQualityService = audioQualityService;
         _codecMonitor = codecMonitor;
         _adapterService = adapterService;
+        _featureManager = featureManager;
+        _latencyService = latencyService;
+        _encoderService = encoderService;
 
         _trayIcon = new TrayIconManager();
         _trayIcon.ExitRequested += (_, _) => ExitApplication();
@@ -307,6 +408,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CurrentModeName));
 
         _ = RefreshDiagnosticsAsync();
+        _ = RefreshFeatureStatesAsync();
     }
 
     private async void InitializeInBackground()
@@ -388,6 +490,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             }
 
             await RefreshDiagnosticsAsync();
+            await RefreshFeatureStatesAsync();
 
             Logger.Information("MainViewModel initialized");
         }
@@ -560,7 +663,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Logger.Information("Opening diagnostics window");
 
         var viewModel = new DiagnosticsViewModel(
-            _bluetoothService, _audioService, _profileManager, _settingsService, _audioQualityService);
+            _bluetoothService, _audioService, _profileManager, _settingsService, _audioQualityService, _latencyService, _encoderService);
         _diagnosticsWindow = new DiagnosticsWindow(viewModel);
         _diagnosticsWindow.Closed += (_, _) => _diagnosticsWindow = null;
         _diagnosticsWindow.Show();
@@ -940,14 +1043,25 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
             var currentMMCSS = _audioQualityService.AreMMCSSOptimizationsApplied();
             var mmcssChanged = false;
+            var mmcssFailed = false;
 
             if (MmcssOptimizationsEnabled && !currentMMCSS)
             {
                 mmcssChanged = _audioQualityService.ApplyMMCSSOptimizations();
+                if (!mmcssChanged)
+                {
+                    mmcssFailed = true;
+                    MmcssOptimizationsEnabled = false;
+                }
             }
             else if (!MmcssOptimizationsEnabled && currentMMCSS)
             {
                 mmcssChanged = _audioQualityService.RevertMMCSSOptimizations();
+                if (!mmcssChanged)
+                {
+                    mmcssFailed = true;
+                    MmcssOptimizationsEnabled = true;
+                }
             }
 
             if (success)
@@ -964,6 +1078,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     message += Strings.CurrentLanguage == Language.Russian
                         ? "\n\nИзменения MMCSS требуют перезагрузки компьютера."
                         : "\n\nMMCSS changes require a computer restart.";
+                }
+                else if (mmcssFailed)
+                {
+                    message += Strings.CurrentLanguage == Language.Russian
+                        ? "\n\n⚠️ Не удалось изменить настройки MMCSS. Запустите программу от имени администратора."
+                        : "\n\n⚠️ Failed to change MMCSS settings. Run the program as administrator.";
                 }
 
                 System.Windows.MessageBox.Show(
@@ -1405,6 +1525,236 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     #endregion
 
+    #region Feature Management Methods
+
+    [RelayCommand]
+    private async Task RefreshFeatureStatesAsync()
+    {
+        try
+        {
+            await _featureManager.LoadStateAsync();
+
+            foreach (var featureId in Enum.GetValues<Models.FeatureId>())
+            {
+                var state = _featureManager.GetStateInfo(featureId);
+                var canEnable = _featureManager.CanEnable(featureId);
+                var isEnabled = state.State == Models.FeatureState.Enabled;
+
+                var isExperimental = featureId is Models.FeatureId.LdacRegistry or Models.FeatureId.ExternalEncoder;
+                (bool CanActivate, string? Reason) canActivate = (canEnable.CanEnable, canEnable.Reason);
+
+                if (isExperimental && !isEnabled)
+                {
+                    canActivate = await _featureManager.CanActivateAsync(featureId);
+                }
+
+                var statusText = GetFeatureStatusText(state, canActivate);
+
+                switch (featureId)
+                {
+                    case Models.FeatureId.SmartTransition:
+                        SmartTransitionEnabled = isEnabled;
+                        SmartTransitionAvailable = canEnable.CanEnable || isEnabled;
+                        SmartTransitionStatus = statusText;
+                        break;
+                    case Models.FeatureId.WifiCoexistence:
+                        WifiCoexistenceEnabled = isEnabled;
+                        WifiCoexistenceAvailable = canEnable.CanEnable || isEnabled;
+                        WifiCoexistenceStatus = statusText;
+                        break;
+                    case Models.FeatureId.WifiPowerSaving:
+                        WifiPowerSavingEnabled = isEnabled;
+                        WifiPowerSavingAvailable = canEnable.CanEnable || isEnabled;
+                        WifiPowerSavingStatus = statusText;
+                        break;
+                    case Models.FeatureId.ProcessingPeriodControl:
+                        ProcessingPeriodEnabled = isEnabled;
+                        ProcessingPeriodAvailable = canEnable.CanEnable || isEnabled;
+                        ProcessingPeriodStatus = statusText;
+                        break;
+                    case Models.FeatureId.LatencyQuery:
+                        LatencyQueryEnabled = isEnabled;
+                        LatencyQueryAvailable = canEnable.CanEnable || isEnabled;
+                        LatencyQueryStatus = statusText;
+                        break;
+                    case Models.FeatureId.LdacRegistry:
+                        LdacRegistryEnabled = isEnabled;
+                        LdacRegistryAvailable = canActivate.CanActivate || isEnabled;
+                        LdacRegistryStatus = statusText;
+                        break;
+                    case Models.FeatureId.ExternalEncoder:
+                        ExternalEncoderEnabled = isEnabled;
+                        ExternalEncoderAvailable = canActivate.CanActivate || isEnabled;
+                        ExternalEncoderStatus = statusText;
+                        break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Failed to refresh feature states");
+        }
+    }
+
+    private static string GetFeatureStatusText(Models.FeatureStateInfo state, (bool CanActivate, string? Reason) canActivate)
+    {
+        if (state.State == Models.FeatureState.Enabled)
+            return Strings.Get("Feature.Status.Active");
+        if (state.State == Models.FeatureState.Error)
+            return state.ErrorMessage ?? Strings.Get("Feature.Status.Error");
+        if (!canActivate.CanActivate)
+            return LocalizeReason(canActivate.Reason) ?? Strings.Get("Feature.Status.Unavailable");
+        return Strings.Get("Feature.Status.Available");
+    }
+
+    private static string? LocalizeReason(string? reason)
+    {
+        if (string.IsNullOrEmpty(reason))
+            return null;
+
+        if (reason.StartsWith("Conflicts with"))
+        {
+            var colonIdx = reason.IndexOf(':');
+            if (colonIdx > 0)
+            {
+                var featuresStr = reason[(colonIdx + 1)..].Trim();
+                var featureIds = featuresStr.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                var localizedNames = featureIds
+                    .Select(id => Strings.GetFeatureName(id.Trim()))
+                    .ToArray();
+                return string.Format(Strings.Feature_ConflictsWithShort, string.Join(", ", localizedNames));
+            }
+        }
+
+        return reason;
+    }
+
+    [RelayCommand]
+    private async Task ToggleFeatureAsync(Models.FeatureId featureId)
+    {
+        if (IsFeatureOperationInProgress) return;
+
+        IsFeatureOperationInProgress = true;
+        try
+        {
+            var state = _featureManager.GetStateInfo(featureId);
+            if (state.State == Models.FeatureState.Enabled)
+            {
+                var result = await _featureManager.DisableAsync(featureId);
+                if (!result.Success)
+                {
+                    ShowNotification(result.ErrorMessage ?? Strings.Get("Feature.DisableFailed"),
+                        System.Windows.Forms.ToolTipIcon.Error);
+                }
+            }
+            else
+            {
+                var conflicts = _featureManager.GetConflicts(featureId);
+                var enabledConflicts = conflicts
+                    .Where(c => _featureManager.GetStateInfo(c).State == Models.FeatureState.Enabled)
+                    .ToList();
+
+                if (enabledConflicts.Any())
+                {
+                    var conflictNames = string.Join(", ", enabledConflicts.Select(GetFeatureDisplayName));
+                    var message = string.Format(Strings.Get("Feature.ConflictWarning"), conflictNames);
+
+                    var dialogResult = System.Windows.MessageBox.Show(
+                        message,
+                        Strings.Dialog_Warning,
+                        System.Windows.MessageBoxButton.YesNo,
+                        System.Windows.MessageBoxImage.Warning);
+
+                    if (dialogResult != System.Windows.MessageBoxResult.Yes)
+                    {
+                        return;
+                    }
+
+                    foreach (var conflictId in enabledConflicts)
+                    {
+                        await _featureManager.DisableAsync(conflictId);
+                    }
+                }
+
+                var result = await _featureManager.EnableAsync(featureId);
+                if (!result.Success)
+                {
+                    ShowNotification(result.ErrorMessage ?? Strings.Get("Feature.EnableFailed"),
+                        System.Windows.Forms.ToolTipIcon.Error);
+                }
+            }
+
+            await RefreshFeatureStatesAsync();
+        }
+        finally
+        {
+            IsFeatureOperationInProgress = false;
+        }
+    }
+
+    private static string GetFeatureDisplayName(Models.FeatureId featureId) => featureId switch
+    {
+        Models.FeatureId.SmartTransition => Strings.Get("Feature.SmartTransition"),
+        Models.FeatureId.WifiCoexistence => Strings.Get("Feature.WifiCoexistence"),
+        Models.FeatureId.WifiPowerSaving => Strings.Get("Feature.WifiPowerSaving"),
+        Models.FeatureId.ProcessingPeriodControl => Strings.Get("Feature.ProcessingPeriod"),
+        Models.FeatureId.LatencyQuery => Strings.Get("Feature.LatencyQuery"),
+        Models.FeatureId.LdacRegistry => Strings.Get("Feature.LdacRegistry"),
+        Models.FeatureId.ExternalEncoder => Strings.Get("Feature.ExternalEncoder"),
+        _ => featureId.ToString()
+    };
+
+    [RelayCommand]
+    private Task ToggleSmartTransitionAsync() => ToggleFeatureAsync(Models.FeatureId.SmartTransition);
+
+    [RelayCommand]
+    private Task ToggleWifiCoexistenceAsync() => ToggleFeatureAsync(Models.FeatureId.WifiCoexistence);
+
+    [RelayCommand]
+    private Task ToggleWifiPowerSavingAsync() => ToggleFeatureAsync(Models.FeatureId.WifiPowerSaving);
+
+    [RelayCommand]
+    private Task ToggleProcessingPeriodAsync() => ToggleFeatureAsync(Models.FeatureId.ProcessingPeriodControl);
+
+    [RelayCommand]
+    private Task ToggleLatencyQueryAsync() => ToggleFeatureAsync(Models.FeatureId.LatencyQuery);
+
+    [RelayCommand]
+    private Task ToggleLdacRegistryAsync() => ToggleFeatureAsync(Models.FeatureId.LdacRegistry);
+
+    [RelayCommand]
+    private Task ToggleExternalEncoderAsync() => ToggleFeatureAsync(Models.FeatureId.ExternalEncoder);
+
+    [RelayCommand]
+    private async Task ApplyEncoderSettingsAsync()
+    {
+        if (!ExternalEncoderEnabled || !_encoderService.IsServiceAvailable)
+        {
+            ShowNotification(Strings.Get("Encoder.NotRunning"), System.Windows.Forms.ToolTipIcon.Warning);
+            return;
+        }
+
+        try
+        {
+            var success = await _encoderService.SetQualityAsync(SelectedEncoderQuality);
+            if (success)
+            {
+                ShowNotification(Strings.Get("Encoder.SettingsApplied"));
+            }
+            else
+            {
+                ShowNotification(Strings.Get("Encoder.SettingsFailed"), System.Windows.Forms.ToolTipIcon.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Failed to apply encoder settings");
+            ShowNotification($"{Strings.Status_Error}: {ex.Message}", System.Windows.Forms.ToolTipIcon.Error);
+        }
+    }
+
+    #endregion
+
     private void OnSettingsChanged(object? sender, AppSettings settings)
     {
         Logger.Information("Settings changed, updating...");
@@ -1453,3 +1803,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         GC.SuppressFinalize(this);
     }
 }
+
+public record EncoderCodecOption(string Value, string DisplayName);
+
+public record EncoderQualityOption(string Value, string DisplayName);

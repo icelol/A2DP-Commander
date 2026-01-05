@@ -19,6 +19,8 @@ public partial class DiagnosticsViewModel : ObservableObject
     private readonly IProfileManager _profileManager;
     private readonly ISettingsService _settingsService;
     private readonly IAudioQualityService? _audioQualityService;
+    private readonly IAudioLatencyService? _latencyService;
+    private readonly IEncoderService? _encoderService;
 
     [ObservableProperty]
     private string _deviceStatus = "";
@@ -39,6 +41,12 @@ public partial class DiagnosticsViewModel : ObservableObject
     private string _settingsInfo = "";
 
     [ObservableProperty]
+    private string _latencyInfo = "";
+
+    [ObservableProperty]
+    private string _encoderInfo = "";
+
+    [ObservableProperty]
     private ObservableCollection<string> _logEntries = new();
 
     [ObservableProperty]
@@ -51,13 +59,17 @@ public partial class DiagnosticsViewModel : ObservableObject
         IAudioEndpointService audioService,
         IProfileManager profileManager,
         ISettingsService settingsService,
-        IAudioQualityService? audioQualityService = null)
+        IAudioQualityService? audioQualityService = null,
+        IAudioLatencyService? latencyService = null,
+        IEncoderService? encoderService = null)
     {
         _bluetoothService = bluetoothService;
         _audioService = audioService;
         _profileManager = profileManager;
         _settingsService = settingsService;
         _audioQualityService = audioQualityService;
+        _latencyService = latencyService;
+        _encoderService = encoderService;
 
         LogFilePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -135,6 +147,9 @@ public partial class DiagnosticsViewModel : ObservableObject
                           $"{Strings.Diag_AutoSwitch}: {(settings.AutoSwitchByApp ? Strings.Diag_Yes : Strings.Diag_No)}\n" +
                           $"{Strings.Diag_Notifications}: {(settings.ShowNotifications ? Strings.Diag_Yes : Strings.Diag_No)}";
 
+            UpdateLatencyInfo(btEndpoints);
+            await UpdateEncoderInfoAsync();
+
             await LoadRecentLogsAsync();
         }
         catch (Exception ex)
@@ -185,6 +200,95 @@ public partial class DiagnosticsViewModel : ObservableObject
             Logger.Warning(ex, "Failed to load logs");
             LogEntries.Clear();
             LogEntries.Add($"{Strings.Status_Error}: {ex.Message}");
+        }
+    }
+
+    private void UpdateLatencyInfo(IReadOnlyList<AudioEndpointInfo> btEndpoints)
+    {
+        if (_latencyService == null || !_latencyService.IsSupported)
+        {
+            LatencyInfo = Strings.Diag_LatencyServiceUnavailable;
+            return;
+        }
+
+        var a2dpEndpoint = btEndpoints.FirstOrDefault(e => e.IsPlayback && e.BluetoothProfile == BluetoothAudioProfile.A2dp);
+        if (a2dpEndpoint == null)
+        {
+            LatencyInfo = Strings.Diag_NoA2dpDevice;
+            return;
+        }
+
+        try
+        {
+            var info = _latencyService.GetLatencyInfo(a2dpEndpoint.Id);
+            if (!info.IsSupported)
+            {
+                LatencyInfo = $"{Strings.Diag_LatencyQueryFailed}: {info.ErrorMessage}";
+                return;
+            }
+
+            var bufferInfo = _audioService.GetBufferInfo(a2dpEndpoint.Id);
+            var policyConfigSection = bufferInfo.IsSupported
+                ? $"\n\n{Strings.Diag_PolicyConfigBuffer}:\n" +
+                  $"  {Strings.Diag_CurrentBuffer}: {bufferInfo.CurrentMs:F1} ms\n" +
+                  $"  {Strings.Diag_MinBuffer}: {bufferInfo.MinMs:F1} ms"
+                : "";
+
+            LatencyInfo = $"{Strings.Diag_DeviceLabel}: {a2dpEndpoint.FriendlyName}\n\n" +
+                         $"{Strings.Diag_AudioEngineBuffer}:\n" +
+                         $"  {Strings.Diag_CurrentBuffer}: {info.CurrentMs:F1} ms\n" +
+                         $"  {Strings.Diag_MinBuffer}: {info.MinMs:F1} ms\n" +
+                         $"  {Strings.Diag_MaxBuffer}: {info.MaxMs:F1} ms\n" +
+                         $"  {Strings.Diag_SampleRate}: {info.SampleRate} Hz" +
+                         policyConfigSection;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning(ex, "Failed to get latency info for {DeviceId}", a2dpEndpoint.Id);
+            LatencyInfo = $"{Strings.Status_Error}: {ex.Message}";
+        }
+    }
+
+    private async Task UpdateEncoderInfoAsync()
+    {
+        if (_encoderService == null)
+        {
+            EncoderInfo = Strings.Diag_EncoderServiceNotInit;
+            return;
+        }
+
+        try
+        {
+            var available = await _encoderService.CheckServiceAvailableAsync();
+            if (!available)
+            {
+                EncoderInfo = Strings.Diag_EncoderServiceNotRunning;
+                return;
+            }
+
+            var status = await _encoderService.GetStatusAsync();
+            if (status == null)
+            {
+                EncoderInfo = Strings.Diag_EncoderServiceError;
+                return;
+            }
+
+            if (status.Running)
+            {
+                EncoderInfo = $"{Strings.Diag_EncoderStatus}: {Strings.Diag_EncoderRunning}\n" +
+                             $"{Strings.Diag_CodecLabel}: {status.Codec}\n" +
+                             $"{Strings.Diag_Bitrate}: {status.Bitrate} kbps\n" +
+                             $"{Strings.Diag_FramesEncoded}: {status.FramesEncoded:N0}";
+            }
+            else
+            {
+                EncoderInfo = $"{Strings.Diag_EncoderStatus}: {Strings.Diag_EncoderReady}";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning(ex, "Failed to get encoder status");
+            EncoderInfo = $"{Strings.Status_Error}: {ex.Message}";
         }
     }
 
@@ -266,6 +370,12 @@ public partial class DiagnosticsViewModel : ObservableObject
 
             === Audio ===
             {AudioInfo}
+
+            === Latency ===
+            {LatencyInfo}
+
+            === Encoder Service ===
+            {EncoderInfo}
 
             === Codec ===
             {CodecInfo}
