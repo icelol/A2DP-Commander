@@ -14,7 +14,6 @@ public class AudioEndpointService : IAudioEndpointService, IMMNotificationClient
     private readonly List<AudioEndpointInfo> _playbackEndpoints = new();
     private readonly List<AudioEndpointInfo> _recordingEndpoints = new();
     private readonly object _lock = new();
-    private TaskCompletionSource<string>? _deviceStateChangeTcs;
     private bool _disposed;
 
     public event EventHandler<AudioEndpointInfo>? EndpointAdded;
@@ -128,36 +127,6 @@ public class AudioEndpointService : IAudioEndpointService, IMMNotificationClient
         }
     }
 
-    public AudioEndpointInfo? FindVirtualAudioDevice()
-    {
-        lock (_lock)
-        {
-            var virtualDevicePatterns = new[]
-            {
-                "VB-Audio",
-                "CABLE Input",
-                "Virtual Cable",
-                "VoiceMeeter",
-                "Scream"
-            };
-
-            foreach (var endpoint in _playbackEndpoints)
-            {
-                foreach (var pattern in virtualDevicePatterns)
-                {
-                    if (endpoint.FriendlyName.Contains(pattern, StringComparison.OrdinalIgnoreCase) ||
-                        endpoint.Name.Contains(pattern, StringComparison.OrdinalIgnoreCase))
-                    {
-                        Logger.Debug("Found virtual audio device: {Name}", endpoint.FriendlyName);
-                        return endpoint;
-                    }
-                }
-            }
-
-            return null;
-        }
-    }
-
     public bool SetDefaultPlaybackDevice(string deviceId)
     {
         try
@@ -250,7 +219,7 @@ public class AudioEndpointService : IAudioEndpointService, IMMNotificationClient
 
         if (isBluetooth)
         {
-            profile = DetermineBluetoothProfile(friendlyName);
+            profile = DetermineBluetoothProfile(friendlyName, device.ID, isPlayback);
         }
 
         var isDefault = false;
@@ -324,10 +293,20 @@ public class AudioEndpointService : IAudioEndpointService, IMMNotificationClient
         }
     }
 
-    private static BluetoothAudioProfile DetermineBluetoothProfile(string friendlyName)
+    private static BluetoothAudioProfile DetermineBluetoothProfile(string friendlyName, string deviceId, bool isPlayback)
     {
+        if (deviceId.Contains("BTHHFENUM", StringComparison.OrdinalIgnoreCase) ||
+            deviceId.Contains("HandsFree", StringComparison.OrdinalIgnoreCase) ||
+            deviceId.Contains("Hands-Free", StringComparison.OrdinalIgnoreCase))
+        {
+            return BluetoothAudioProfile.Hfp;
+        }
+
         if (friendlyName.Contains("Hands-Free", StringComparison.OrdinalIgnoreCase) ||
             friendlyName.Contains("Headset", StringComparison.OrdinalIgnoreCase) ||
+            friendlyName.Contains("Handsfree", StringComparison.OrdinalIgnoreCase) ||
+            friendlyName.Contains("HFP", StringComparison.OrdinalIgnoreCase) ||
+            friendlyName.Contains("HSP", StringComparison.OrdinalIgnoreCase) ||
             friendlyName.Contains("Гарнитура", StringComparison.OrdinalIgnoreCase))
             return BluetoothAudioProfile.Hfp;
 
@@ -338,99 +317,10 @@ public class AudioEndpointService : IAudioEndpointService, IMMNotificationClient
             friendlyName.Contains("Динамик", StringComparison.OrdinalIgnoreCase))
             return BluetoothAudioProfile.A2dp;
 
+        if (isPlayback && deviceId.Contains("BTHENUM", StringComparison.OrdinalIgnoreCase))
+            return BluetoothAudioProfile.A2dp;
+
         return BluetoothAudioProfile.Unknown;
-    }
-
-    public bool MuteDevice(string deviceId, bool mute)
-    {
-        try
-        {
-            using var device = _enumerator.GetDevice(deviceId);
-            if (device.AudioEndpointVolume == null)
-            {
-                Logger.Warning("Device {DeviceId} does not support volume control", deviceId);
-                return false;
-            }
-
-            device.AudioEndpointVolume.Mute = mute;
-            Logger.Debug("Device {DeviceId} mute set to {Mute}", deviceId, mute);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning(ex, "Failed to {Action} device {DeviceId}", mute ? "mute" : "unmute", deviceId);
-            return false;
-        }
-    }
-
-    public float? GetDeviceVolume(string deviceId)
-    {
-        try
-        {
-            using var device = _enumerator.GetDevice(deviceId);
-            return device.AudioEndpointVolume?.MasterVolumeLevelScalar;
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning(ex, "Failed to get volume for device {DeviceId}", deviceId);
-            return null;
-        }
-    }
-
-    public bool SetDeviceVolume(string deviceId, float volume)
-    {
-        try
-        {
-            using var device = _enumerator.GetDevice(deviceId);
-            if (device.AudioEndpointVolume == null)
-            {
-                Logger.Warning("Device {DeviceId} does not support volume control", deviceId);
-                return false;
-            }
-
-            device.AudioEndpointVolume.MasterVolumeLevelScalar = Math.Clamp(volume, 0f, 1f);
-            Logger.Debug("Device {DeviceId} volume set to {Volume}", deviceId, volume);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning(ex, "Failed to set volume for device {DeviceId}", deviceId);
-            return false;
-        }
-    }
-
-    public async Task<bool> WaitForDeviceStateChangeAsync(string? deviceIdHint, int timeoutMs = 2000, CancellationToken cancellationToken = default)
-    {
-        _deviceStateChangeTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        try
-        {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(timeoutMs);
-
-            var completedTask = await Task.WhenAny(
-                _deviceStateChangeTcs.Task,
-                Task.Delay(timeoutMs, cts.Token));
-
-            if (completedTask == _deviceStateChangeTcs.Task)
-            {
-                var changedDeviceId = await _deviceStateChangeTcs.Task;
-                Logger.Debug("Device state change detected: {DeviceId}", changedDeviceId);
-                return true;
-            }
-
-            Logger.Debug("Timeout waiting for device state change after {Timeout}ms", timeoutMs);
-            return false;
-        }
-        catch (OperationCanceledException)
-        {
-            Logger.Debug("Wait for device state change cancelled");
-            return false;
-        }
-        finally
-        {
-            _deviceStateChangeTcs = null;
-        }
     }
 
     #region IMMNotificationClient
@@ -438,9 +328,6 @@ public class AudioEndpointService : IAudioEndpointService, IMMNotificationClient
     public void OnDeviceStateChanged(string deviceId, DeviceState newState)
     {
         Logger.Debug("Device state changed: {DeviceId} -> {State}", deviceId, newState);
-
-        _deviceStateChangeTcs?.TrySetResult(deviceId);
-
         Refresh();
     }
 
@@ -507,51 +394,6 @@ public class AudioEndpointService : IAudioEndpointService, IMMNotificationClient
 
     #endregion
 
-    public BufferSizeInfo GetBufferInfo(string deviceId)
-    {
-        try
-        {
-            var policyConfig = new PolicyConfigClient();
-            var (defaultPeriod, minPeriod) = policyConfig.GetProcessingPeriod(deviceId);
-
-            var maxPeriod = 100000L;
-
-            return BufferSizeInfo.FromPeriods(defaultPeriod, minPeriod, maxPeriod, defaultPeriod);
-        }
-        catch (COMException ex)
-        {
-            Logger.Warning(ex, "Failed to get buffer info for device {DeviceId}: 0x{HR:X8}", deviceId, ex.HResult);
-            return BufferSizeInfo.NotSupported($"COM error: 0x{ex.HResult:X8}");
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning(ex, "Failed to get buffer info for device {DeviceId}", deviceId);
-            return BufferSizeInfo.NotSupported(ex.Message);
-        }
-    }
-
-    public bool SetBufferSize(string deviceId, long periodIn100Ns)
-    {
-        try
-        {
-            var policyConfig = new PolicyConfigClient();
-            policyConfig.SetProcessingPeriod(deviceId, periodIn100Ns);
-            Logger.Information("Set buffer size for {DeviceId} to {PeriodMs}ms ({Period} 100ns units)",
-                deviceId, periodIn100Ns / 10000.0, periodIn100Ns);
-            return true;
-        }
-        catch (COMException ex)
-        {
-            Logger.Warning(ex, "Failed to set buffer size for device {DeviceId}: 0x{HR:X8}", deviceId, ex.HResult);
-            return false;
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning(ex, "Failed to set buffer size for device {DeviceId}", deviceId);
-            return false;
-        }
-    }
-
     public void Dispose()
     {
         if (_disposed) return;
@@ -613,17 +455,6 @@ internal class PolicyConfigClient
     public void SetDefaultEndpoint(string deviceId, Role role)
     {
         _policyConfig.SetDefaultEndpoint(deviceId, role);
-    }
-
-    public (long defaultPeriod, long minPeriod) GetProcessingPeriod(string deviceId)
-    {
-        _policyConfig.GetProcessingPeriod(deviceId, true, out long defaultPeriod, out long minPeriod);
-        return (defaultPeriod, minPeriod);
-    }
-
-    public void SetProcessingPeriod(string deviceId, long period)
-    {
-        _policyConfig.SetProcessingPeriod(deviceId, period);
     }
 }
 

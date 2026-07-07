@@ -90,23 +90,34 @@ public class BluetoothAdapterService : IBluetoothAdapterService
                 return false;
             }
 
-            foreach (var adapter in adapters.Where(a => a.IsEnabled &&
+            var previouslyEnabledAdapters = adapters
+                .Where(a => a.IsEnabled &&
+                            !a.DeviceInstanceId.Equals(deviceInstanceId, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (!targetAdapter.IsEnabled)
+            {
+                Logger.Information("Enabling adapter: {Name}", targetAdapter.Name);
+                if (!EnableAdapter(deviceInstanceId) || !WaitForAdapterState(deviceInstanceId, enabled: true))
+                {
+                    Logger.Error("Failed to enable target adapter: {Name}", targetAdapter.Name);
+
+                    foreach (var adapter in previouslyEnabledAdapters)
+                    {
+                        EnableAdapter(adapter.DeviceInstanceId);
+                    }
+
+                    return false;
+                }
+            }
+
+            foreach (var adapter in previouslyEnabledAdapters.Where(a =>
                 !a.DeviceInstanceId.Equals(deviceInstanceId, StringComparison.OrdinalIgnoreCase)))
             {
                 Logger.Information("Disabling adapter: {Name}", adapter.Name);
                 if (!DisableAdapter(adapter.DeviceInstanceId))
                 {
                     Logger.Warning("Failed to disable adapter: {Name}", adapter.Name);
-                }
-            }
-
-            if (!targetAdapter.IsEnabled)
-            {
-                Logger.Information("Enabling adapter: {Name}", targetAdapter.Name);
-                if (!EnableAdapter(deviceInstanceId))
-                {
-                    Logger.Error("Failed to enable target adapter: {Name}", targetAdapter.Name);
-                    return false;
                 }
             }
 
@@ -128,6 +139,21 @@ public class BluetoothAdapterService : IBluetoothAdapterService
     public bool DisableAdapter(string deviceInstanceId)
     {
         return SetAdapterState(deviceInstanceId, false);
+    }
+
+    private static bool WaitForAdapterState(string deviceInstanceId, bool enabled)
+    {
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            if (IsDeviceEnabled(deviceInstanceId) == enabled)
+            {
+                return true;
+            }
+
+            Thread.Sleep(300);
+        }
+
+        return IsDeviceEnabled(deviceInstanceId) == enabled;
     }
 
     private bool SetAdapterState(string deviceInstanceId, bool enable)

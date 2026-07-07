@@ -17,8 +17,4 @@ public interface IProfileManager : IDisposable
     bool RequiresAdminRights { get; }
 
     bool IsRunningAsAdmin { get; }
-
-    TransitionConfig TransitionConfig { get; }
-
-    void SetTransitionConfig(TransitionConfig config);
 }

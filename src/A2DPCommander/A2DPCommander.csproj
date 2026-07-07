@@ -15,15 +15,17 @@
     <AssemblyName>A2DP-Commander</AssemblyName>
 
     <!-- Version info -->
-    <Version>1.3.4</Version>
-    <AssemblyVersion>1.3.4.0</AssemblyVersion>
-    <FileVersion>1.3.4.0</FileVersion>
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
     <AssemblyTitle>A2DP Commander</AssemblyTitle>
     <Product>A2DP Commander</Product>
     <Description>Free Bluetooth audio profile manager (A2DP/HFP) for Windows</Description>
     <Company>Open Source</Company>
     <Copyright>MIT License</Copyright>
-    <DebugType>none</DebugType>
+    <DebugType Condition="'$(Configuration)' == 'Debug'">portable</DebugType>
+    <DebugSymbols Condition="'$(Configuration)' == 'Debug'">true</DebugSymbols>
+    <DebugType Condition="'$(Configuration)' != 'Debug'">none</DebugType>
   </PropertyGroup>
 
   <ItemGroup>

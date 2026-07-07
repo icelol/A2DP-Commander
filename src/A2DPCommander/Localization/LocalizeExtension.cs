@@ -196,30 +196,4 @@ public class LocalizationManager : System.ComponentModel.INotifyPropertyChanged
     public string Adapter_SwitchSuccess => Strings.Adapter_SwitchSuccess;
     public string Adapter_SwitchFailed => Strings.Adapter_SwitchFailed;
     public string Adapter_Refresh => Strings.Adapter_Refresh;
-
-    public string Feature_Title => Strings.Get("Feature.Title");
-    public string Feature_Description => Strings.Get("Feature.Description");
-    public string Feature_SmartTransition => Strings.Get("Feature.SmartTransition");
-    public string Feature_SmartTransition_Desc => Strings.Get("Feature.SmartTransition.Desc");
-    public string Feature_WifiCoexistence => Strings.Get("Feature.WifiCoexistence");
-    public string Feature_WifiCoexistence_Desc => Strings.Get("Feature.WifiCoexistence.Desc");
-    public string Feature_WifiCoexistence_Tooltip => Strings.Get("Feature.WifiCoexistence.Tooltip");
-    public string Feature_WifiPowerSaving => Strings.Get("Feature.WifiPowerSaving");
-    public string Feature_WifiPowerSaving_Desc => Strings.Get("Feature.WifiPowerSaving.Desc");
-    public string Feature_WifiPowerSaving_Tooltip => Strings.Get("Feature.WifiPowerSaving.Tooltip");
-    public string Feature_ProcessingPeriod => Strings.Get("Feature.ProcessingPeriod");
-    public string Feature_ProcessingPeriod_Desc => Strings.Get("Feature.ProcessingPeriod.Desc");
-    public string Feature_LatencyQuery => Strings.Get("Feature.LatencyQuery");
-    public string Feature_LatencyQuery_Desc => Strings.Get("Feature.LatencyQuery.Desc");
-    public string Feature_Experimental => Strings.Get("Feature.Experimental");
-    public string Feature_LdacRegistry => Strings.Get("Feature.LdacRegistry");
-    public string Feature_LdacRegistry_Desc => Strings.Get("Feature.LdacRegistry.Desc");
-    public string Feature_LdacRegistry_Tooltip => Strings.Get("Feature.LdacRegistry.Tooltip");
-    public string Feature_ExternalEncoder => Strings.Get("Feature.ExternalEncoder");
-    public string Feature_ExternalEncoder_Desc => Strings.Get("Feature.ExternalEncoder.Desc");
-    public string Feature_ExternalEncoder_Tooltip => Strings.Get("Feature.ExternalEncoder.Tooltip");
-
-    public string Encoder_Codec => Strings.Get("Encoder.Codec");
-    public string Encoder_Quality => Strings.Get("Encoder.Quality");
-    public string Encoder_Apply => Strings.Get("Encoder.Apply");
 }

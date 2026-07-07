@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using BTAudioDriver.Models;
 using Serilog;
 using Windows.Devices.Bluetooth;
@@ -15,7 +16,12 @@ public class BluetoothService : IBluetoothService
     private static readonly Guid AvrcpServiceClass = new("0000110e-0000-1000-8000-00805f9b34fb");
 
     private readonly ConcurrentDictionary<string, BluetoothDeviceInfo> _devices = new();
+    private readonly object _watcherLock = new();
     private DeviceWatcher? _deviceWatcher;
+    private Channel<DeviceWatcherEvent>? _deviceEvents;
+    private CancellationTokenSource? _watcherCts;
+    private Task? _processingTask;
+    private long _eventSequence;
     private bool _isWatching;
     private bool _disposed;
 
@@ -105,30 +111,42 @@ public class BluetoothService : IBluetoothService
 
     public Task StartWatchingAsync(CancellationToken cancellationToken = default)
     {
-        if (_isWatching) return Task.CompletedTask;
-
-        string[] requestedProperties =
+        lock (_watcherLock)
         {
-            "System.Devices.Aep.IsConnected",
-            "System.Devices.Aep.IsPaired",
-            "System.Devices.Aep.DeviceAddress"
-        };
+            if (_isWatching) return Task.CompletedTask;
 
-        var selector = BluetoothDevice.GetDeviceSelectorFromPairingState(true);
+            _watcherCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _deviceEvents = Channel.CreateUnbounded<DeviceWatcherEvent>(new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false
+            });
+            _processingTask = Task.Run(() => ProcessDeviceEventsAsync(_watcherCts.Token));
 
-        _deviceWatcher = DeviceInformation.CreateWatcher(
-            selector,
-            requestedProperties,
-            DeviceInformationKind.AssociationEndpoint);
+            string[] requestedProperties =
+            {
+                "System.Devices.Aep.IsConnected",
+                "System.Devices.Aep.IsPaired",
+                "System.Devices.Aep.DeviceAddress",
+                "System.Devices.ContainerId"
+            };
 
-        _deviceWatcher.Added += OnDeviceAdded;
-        _deviceWatcher.Removed += OnDeviceRemoved;
-        _deviceWatcher.Updated += OnDeviceUpdated;
-        _deviceWatcher.EnumerationCompleted += OnEnumerationCompleted;
-        _deviceWatcher.Stopped += OnWatcherStopped;
+            var selector = BluetoothDevice.GetDeviceSelectorFromPairingState(true);
 
-        _deviceWatcher.Start();
-        _isWatching = true;
+            _deviceWatcher = DeviceInformation.CreateWatcher(
+                selector,
+                requestedProperties,
+                DeviceInformationKind.AssociationEndpoint);
+
+            _deviceWatcher.Added += OnDeviceAdded;
+            _deviceWatcher.Removed += OnDeviceRemoved;
+            _deviceWatcher.Updated += OnDeviceUpdated;
+            _deviceWatcher.EnumerationCompleted += OnEnumerationCompleted;
+            _deviceWatcher.Stopped += OnWatcherStopped;
+
+            _deviceWatcher.Start();
+            _isWatching = true;
+        }
 
         Logger.Information("Started watching for Bluetooth devices");
         return Task.CompletedTask;
@@ -136,78 +154,169 @@ public class BluetoothService : IBluetoothService
 
     public void StopWatching()
     {
-        if (!_isWatching || _deviceWatcher == null) return;
+        DeviceWatcher? watcher;
+        Channel<DeviceWatcherEvent>? events;
+        CancellationTokenSource? cts;
+        Task? processingTask;
 
-        if (_deviceWatcher.Status == DeviceWatcherStatus.Started ||
-            _deviceWatcher.Status == DeviceWatcherStatus.EnumerationCompleted)
+        lock (_watcherLock)
         {
-            _deviceWatcher.Stop();
+            if (!_isWatching || _deviceWatcher == null) return;
+
+            watcher = _deviceWatcher;
+            events = _deviceEvents;
+            cts = _watcherCts;
+            processingTask = _processingTask;
+
+            _deviceWatcher = null;
+            _deviceEvents = null;
+            _watcherCts = null;
+            _processingTask = null;
+            _isWatching = false;
         }
 
-        _deviceWatcher.Added -= OnDeviceAdded;
-        _deviceWatcher.Removed -= OnDeviceRemoved;
-        _deviceWatcher.Updated -= OnDeviceUpdated;
-        _deviceWatcher.EnumerationCompleted -= OnEnumerationCompleted;
-        _deviceWatcher.Stopped -= OnWatcherStopped;
+        cts?.Cancel();
+        events?.Writer.TryComplete();
 
-        _deviceWatcher = null;
-        _isWatching = false;
+        if (watcher.Status == DeviceWatcherStatus.Started ||
+            watcher.Status == DeviceWatcherStatus.EnumerationCompleted)
+        {
+            watcher.Stop();
+        }
+
+        watcher.Added -= OnDeviceAdded;
+        watcher.Removed -= OnDeviceRemoved;
+        watcher.Updated -= OnDeviceUpdated;
+        watcher.EnumerationCompleted -= OnEnumerationCompleted;
+        watcher.Stopped -= OnWatcherStopped;
+
+        try
+        {
+            processingTask?.Wait(TimeSpan.FromSeconds(1));
+        }
+        catch (AggregateException ex) when (ex.InnerExceptions.All(e => e is OperationCanceledException))
+        {
+        }
 
         Logger.Information("Stopped watching for Bluetooth devices");
     }
 
-    private async void OnDeviceAdded(DeviceWatcher sender, DeviceInformation deviceInfo)
+    private void OnDeviceAdded(DeviceWatcher sender, DeviceInformation deviceInfo)
     {
-        try
-        {
-            var btDevice = await BluetoothDevice.FromIdAsync(deviceInfo.Id);
-            if (btDevice == null) return;
-
-            var info = await CreateDeviceInfoAsync(btDevice);
-            if (!info.IsAudioDevice) return;
-
-            _devices.TryAdd(info.Id, info);
-            Logger.Information("Device added: {DeviceName} ({Mac})", info.Name, info.MacAddress);
-            DeviceAdded?.Invoke(this, info);
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning(ex, "Error processing added device: {DeviceId}", deviceInfo.Id);
-        }
+        EnqueueDeviceEvent(DeviceWatcherEventKind.Added, deviceInfo.Id, deviceInfo, null);
     }
 
     private void OnDeviceRemoved(DeviceWatcher sender, DeviceInformationUpdate deviceInfoUpdate)
     {
-        if (_devices.TryRemove(deviceInfoUpdate.Id, out var removedDevice))
+        EnqueueDeviceEvent(DeviceWatcherEventKind.Removed, deviceInfoUpdate.Id, null, deviceInfoUpdate);
+    }
+
+    private void OnDeviceUpdated(DeviceWatcher sender, DeviceInformationUpdate deviceInfoUpdate)
+    {
+        EnqueueDeviceEvent(DeviceWatcherEventKind.Updated, deviceInfoUpdate.Id, null, deviceInfoUpdate);
+    }
+
+    private void EnqueueDeviceEvent(
+        DeviceWatcherEventKind kind,
+        string deviceId,
+        DeviceInformation? deviceInfo,
+        DeviceInformationUpdate? deviceInfoUpdate)
+    {
+        var events = _deviceEvents;
+        if (events == null) return;
+
+        var sequence = Interlocked.Increment(ref _eventSequence);
+        var queued = events.Writer.TryWrite(new DeviceWatcherEvent(sequence, kind, deviceId, deviceInfo, deviceInfoUpdate));
+        if (!queued)
         {
-            Logger.Information("Device removed: {DeviceName}", removedDevice.Name);
-            DeviceRemoved?.Invoke(this, removedDevice);
+            Logger.Warning("Failed to queue Bluetooth watcher event {Kind} for {DeviceId}", kind, deviceId);
         }
     }
 
-    private async void OnDeviceUpdated(DeviceWatcher sender, DeviceInformationUpdate deviceInfoUpdate)
+    private async Task ProcessDeviceEventsAsync(CancellationToken cancellationToken)
     {
-        if (!_devices.TryGetValue(deviceInfoUpdate.Id, out var existingDevice)) return;
+        var events = _deviceEvents;
+        if (events == null) return;
 
         try
         {
-            var btDevice = await BluetoothDevice.FromIdAsync(deviceInfoUpdate.Id);
-            if (btDevice == null) return;
-
-            var wasConnected = existingDevice.IsConnected;
-            existingDevice.IsConnected = btDevice.ConnectionStatus == BluetoothConnectionStatus.Connected;
-
-            if (wasConnected != existingDevice.IsConnected)
+            await foreach (var deviceEvent in events.Reader.ReadAllAsync(cancellationToken))
             {
-                Logger.Information("Device {DeviceName} connection changed: {Status}",
-                    existingDevice.Name,
-                    existingDevice.IsConnected ? "Connected" : "Disconnected");
-                DeviceConnectionChanged?.Invoke(this, existingDevice);
+                try
+                {
+                    await ProcessDeviceEventAsync(deviceEvent, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning(ex, "Error processing Bluetooth watcher event {Kind} for {DeviceId}",
+                        deviceEvent.Kind, deviceEvent.DeviceId);
+                }
             }
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            Logger.Warning(ex, "Error updating device: {DeviceId}", deviceInfoUpdate.Id);
+        }
+    }
+
+    private async Task ProcessDeviceEventAsync(DeviceWatcherEvent deviceEvent, CancellationToken cancellationToken)
+    {
+        Logger.Debug("Bluetooth event #{Sequence}: {Kind} {DeviceId}",
+            deviceEvent.Sequence, deviceEvent.Kind, deviceEvent.DeviceId);
+
+        switch (deviceEvent.Kind)
+        {
+            case DeviceWatcherEventKind.Added:
+            case DeviceWatcherEventKind.Updated:
+                await Task.Delay(250, cancellationToken);
+                await UpsertDeviceAsync(deviceEvent.DeviceId, deviceEvent.Kind == DeviceWatcherEventKind.Added, cancellationToken);
+                break;
+
+            case DeviceWatcherEventKind.Removed:
+                if (_devices.TryRemove(deviceEvent.DeviceId, out var removedDevice))
+                {
+                    var wasConnected = removedDevice.IsConnected;
+                    removedDevice.IsConnected = false;
+
+                    Logger.Information("Device removed: {DeviceName}", removedDevice.Name);
+                    DeviceRemoved?.Invoke(this, removedDevice);
+
+                    if (wasConnected)
+                    {
+                        DeviceConnectionChanged?.Invoke(this, removedDevice);
+                    }
+                }
+                break;
+        }
+    }
+
+    private async Task UpsertDeviceAsync(string deviceId, bool isAddedEvent, CancellationToken cancellationToken)
+    {
+        var btDevice = await BluetoothDevice.FromIdAsync(deviceId).AsTask(cancellationToken);
+        if (btDevice == null) return;
+
+        var info = await CreateDeviceInfoAsync(btDevice, cancellationToken);
+        if (!info.IsAudioDevice) return;
+
+        var hadExisting = _devices.TryGetValue(info.Id, out var existingDevice);
+        var wasConnected = existingDevice?.IsConnected ?? false;
+        _devices[info.Id] = info;
+
+        if (!hadExisting || isAddedEvent)
+        {
+            Logger.Information("Device added: {DeviceName} ({Mac})", info.Name, info.MacAddress);
+            DeviceAdded?.Invoke(this, info);
+        }
+
+        if (!hadExisting || wasConnected != info.IsConnected)
+        {
+            Logger.Information("Device {DeviceName} connection changed: {Status}",
+                info.Name,
+                info.IsConnected ? "Connected" : "Disconnected");
+            DeviceConnectionChanged?.Invoke(this, info);
         }
     }
 
@@ -220,6 +329,20 @@ public class BluetoothService : IBluetoothService
     {
         Logger.Debug("Device watcher stopped");
     }
+
+    private enum DeviceWatcherEventKind
+    {
+        Added,
+        Updated,
+        Removed
+    }
+
+    private sealed record DeviceWatcherEvent(
+        long Sequence,
+        DeviceWatcherEventKind Kind,
+        string DeviceId,
+        DeviceInformation? DeviceInfo,
+        DeviceInformationUpdate? DeviceInfoUpdate);
 
     private async Task<BluetoothDeviceInfo> CreateDeviceInfoAsync(BluetoothDevice btDevice, CancellationToken cancellationToken = default)
     {
@@ -247,6 +370,13 @@ public class BluetoothService : IBluetoothService
             supportsHfp = true;
         }
 
+        if (!supportsA2dp && !supportsHfp && LooksLikeAudioDevice(btDevice.Name))
+        {
+            Logger.Information("Treating paired Bluetooth device as audio by name: {DeviceName}", btDevice.Name);
+            supportsA2dp = true;
+            supportsHfp = true;
+        }
+
         return new BluetoothDeviceInfo
         {
             Id = btDevice.DeviceId,
@@ -258,6 +388,35 @@ public class BluetoothService : IBluetoothService
             SupportsHfp = supportsHfp,
             SupportsAvrcp = supportsAvrcp
         };
+    }
+
+    private static bool LooksLikeAudioDevice(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+
+        string[] audioNameParts =
+        {
+            "audio",
+            "buds",
+            "earbuds",
+            "earphone",
+            "earphones",
+            "hands-free",
+            "handsfree",
+            "headphone",
+            "headphones",
+            "headset",
+            "speaker",
+            "stereo",
+            "sound",
+            "гарнитура",
+            "динамик",
+            "звук",
+            "наушники",
+            "колонка"
+        };
+
+        return audioNameParts.Any(part => name.Contains(part, StringComparison.OrdinalIgnoreCase));
     }
 
     public void Dispose()

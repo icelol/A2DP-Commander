@@ -213,43 +213,5 @@ internal static class SetupApi
         return 0;
     }
 
-    public static async Task<bool> WaitForDeviceStateAsync(
-        int devInst,
-        bool waitForStarted,
-        int timeoutMs = 3000,
-        CancellationToken cancellationToken = default)
-    {
-        var startTime = Environment.TickCount;
-        var pollIntervalMs = 50;
-
-        while (Environment.TickCount - startTime < timeoutMs)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var status = GetDeviceStatusByDevInst(devInst);
-            var isStarted = (status & DN_STARTED) != 0;
-
-            if (waitForStarted && isStarted)
-                return true;
-            if (!waitForStarted && !isStarted)
-                return true;
-
-            await Task.Delay(pollIntervalMs, cancellationToken);
-
-            pollIntervalMs = Math.Min(pollIntervalMs + 25, 200);
-        }
-
-        return false;
-    }
-
-    public static uint GetDeviceStatusByDevInst(int devInst)
-    {
-        if (CM_Get_DevNode_Status(out var status, out _, devInst, 0) == 0)
-        {
-            return status;
-        }
-        return 0;
-    }
-
     #endregion
 }

@@ -2,17 +2,35 @@
 
 A free Windows utility for managing Bluetooth audio profiles (A2DP/HFP). Solves the problem of incorrect automatic profile switching in Windows.
 
-**Version:** 1.3.4 | **Languages:** Русский, English
+**Version:** 1.1.0 | **Languages:** Русский, English
+
+> Personal fork of [Yumash/A2DP-Commander](https://github.com/Yumash/A2DP-Commander).
+> This version is maintained at [icelol/A2DP-Commander](https://github.com/icelol/A2DP-Commander).
+>
+> The original project is MIT licensed. Original attribution is preserved in [LICENSE](LICENSE).
+
+## Fork Changes
+
+- Added serialized Bluetooth watcher event processing to reduce connection/update race conditions.
+- Device refresh now performs a live Windows scan instead of relying only on cached paired devices.
+- Newly connected audio devices can appear in the device selector without restarting the app.
+- Added fallback detection from active Windows audio endpoints, including Bluetooth speakers shown as `Speakers`.
+- Endpoint waiting is now cancellable and no longer runs inside the UI dispatcher.
+- Music/Calls mode switching is serialized to avoid conflicts between app-triggered and connection-triggered switching.
+- Temporary disconnects no longer erase the saved selected device.
+- A2DP/HFP detection now also uses device id hints, not only localized endpoint names.
+- Bluetooth adapter switching is safer: the target adapter is enabled and checked before disabling the previous one.
+- Refreshed the main window layout and visual styling.
+- Debug builds now include `.pdb` symbols.
 
 ---
 
 ## Table of Contents
 
+- [Fork Changes](#fork-changes)
 - [The Problem](#the-problem)
 - [The Solution](#the-solution)
-- [New in 1.3.4](#new-in-134)
-- [Experimental Features](#experimental-features)
-- [Bluetooth Adapter Selection](#bluetooth-adapter-selection)
+- [New in 1.1.0: Bluetooth Adapter Selection](#new-in-110-bluetooth-adapter-selection)
 - [AAC Codec Issues on Intel Adapters](#aac-codec-issues-on-intel-adapters)
 - [MMCSS Optimization for Reducing Stuttering](#mmcss-optimization-for-reducing-stuttering)
 - [Important: Wait After Connection](#important-wait-after-connection)
@@ -85,99 +103,9 @@ You can switch between modes:
 
 ---
 
-## New in 1.3.4
+## New in 1.1.0: Bluetooth Adapter Selection
 
-### Single Instance with Auto-Focus
-
-- **When launched again**, the app automatically focuses the existing window
-- No more "already running" popups — just focus on the existing window
-- Implemented via Named Pipe IPC
-
-### UI Improvements
-
-- **Removed "Minimize to Tray" button** — closing the window does the same thing
-- **External Encoder status** moved below codec settings with word wrap
-- **Shortened texts** about adapter incompatibility for compactness
-- **Version in title** updates automatically from Assembly
-
-### Changelog
-
-<details>
-<summary>v1.2.1</summary>
-
-- **Auto-detection of adapter support** — experimental features are automatically blocked if the BT adapter doesn't support LDAC/aptX HD
-- **Clear error messages** — when trying to enable an unsupported feature, the reason is shown
-</details>
-
-<details>
-<summary>v1.2.0</summary>
-
-- **WiFi Coexistence** — disable Bluetooth/WiFi conflict on 2.4GHz
-- **WiFi Power Saving** — disable WiFi power saving
-- **Processing Period Control** — manage audio buffer size
-- **Latency Query** — display audio latency in diagnostics
-- **LDAC/aptX encoding** via external USB Bluetooth transmitter
-- **Registry Codec Forcing** — change codec via registry
-</details>
-
-<details>
-<summary>v1.1.0</summary>
-
-- **Bluetooth Adapter Selection** — switch between multiple adapters
-- **Codec Detection** — display current connection codec
-</details>
-
----
-
-## Experimental Features
-
-### External Encoder
-
-Allows using LDAC/aptX HD codecs via an **external USB Bluetooth transmitter**.
-
-#### How It Works
-
-```
-Application → WASAPI capture → Encoder (Rust) → USB Transmitter → Headphones
-```
-
-#### Supported Codecs
-
-| Codec | Bitrate | Quality |
-|-------|---------|---------|
-| LDAC | 990 / 660 / 330 kbps | Hi-Res |
-| aptX HD | 576 kbps | High |
-| aptX | 352 kbps | Good |
-| SBC | 328 kbps | Basic |
-
-#### Recommended USB Bluetooth Transmitters
-
-| Device | Price | Codecs |
-|--------|-------|--------|
-| 1Mii B03Pro | ~$30 | aptX HD, LDAC |
-| Avantree DG80 | ~$40 | aptX LL |
-| FiiO BTA30 Pro | ~$70 | All codecs |
-| Creative BT-W3 | ~$50 | aptX HD |
-
-#### Requirements
-
-- External USB Bluetooth transmitter with the desired codec support
-- Virtual Audio Cable (VB-Audio) or similar (optional)
-
-### Registry Codec Forcing
-
-Changes Windows registry settings to force codec selection.
-
-**Important:**
-- Requires administrator rights
-- Requires system restart
-- Only works if your Bluetooth adapter supports the desired codec
-
----
-
-## Bluetooth Adapter Selection
-
-If you have multiple Bluetooth adapters in your system (e.g., built-in Intel and external USB Realtek), you can **switch between them** directly from the program.
+If you have multiple Bluetooth adapters in your system (e.g., built-in Intel and external USB Realtek), you can now **switch between them** directly from the program.
 
 ### How It Works
 
@@ -298,7 +226,7 @@ If you try to play audio immediately after connection, you might experience a br
 
 ### From Release (Recommended)
 
-1. Download the latest release from the [Releases](https://github.com/Yumash/A2DP-Commander/releases) page
+1. Download the latest release from the [Releases](https://github.com/icelol/A2DP-Commander/releases) page
 2. Choose your version:
    - `A2DP-Commander-vX.X.X-win-x64.zip` - Requires .NET 8 Runtime installed (~9 MB)
    - `A2DP-Commander-vX.X.X-win-x64-self-contained.zip` - Includes .NET Runtime (~66 MB)
@@ -320,7 +248,7 @@ If you try to play audio immediately after connection, you might experience a br
 
 ```bash
 # Clone the repository
-git clone https://github.com/Yumash/A2DP-Commander.git
+git clone https://github.com/icelol/A2DP-Commander.git
 cd A2DP-Commander
 
 # Build (Debug)
@@ -408,6 +336,7 @@ You are free to use, modify, and distribute this software. See the [LICENSE](LIC
 ## Authors
 
 - **Andrey Yumashev** - [github.com/Yumash](https://github.com/Yumash)
+- **icelol** - personal fork maintenance at [github.com/icelol/A2DP-Commander](https://github.com/icelol/A2DP-Commander)
 - **Claude** (Anthropic)
 
 ---

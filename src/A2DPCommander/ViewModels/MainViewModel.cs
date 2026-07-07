@@ -4,7 +4,6 @@ using System.IO;
 using BTAudioDriver.Localization;
 using BTAudioDriver.Models;
 using BTAudioDriver.Services;
-using BTAudioDriver.Services.Features;
 using BTAudioDriver.Views;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -24,14 +23,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly IAudioQualityService _audioQualityService;
     private readonly IBluetoothCodecMonitor _codecMonitor;
     private readonly IBluetoothAdapterService _adapterService;
-    private readonly IFeatureManager _featureManager;
-    private readonly IAudioLatencyService _latencyService;
-    private readonly IEncoderService _encoderService;
     private readonly TrayIconManager _trayIcon;
 
     private bool _disposed;
     private DiagnosticsWindow? _diagnosticsWindow;
     private ProfileMode? _modeBeforeAutoSwitch;
+    private readonly SemaphoreSlim _deviceConnectionGate = new(1, 1);
+    private readonly SemaphoreSlim _modeSwitchGate = new(1, 1);
+    private CancellationTokenSource? _deviceConnectionCts;
 
     [ObservableProperty]
     private DeviceProfileState? _currentState;
@@ -253,97 +252,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     #endregion
 
-    #region Feature Management Properties
-
-    [ObservableProperty]
-    private bool _smartTransitionEnabled;
-
-    [ObservableProperty]
-    private bool _smartTransitionAvailable;
-
-    [ObservableProperty]
-    private string _smartTransitionStatus = "";
-
-    [ObservableProperty]
-    private bool _wifiCoexistenceEnabled;
-
-    [ObservableProperty]
-    private bool _wifiCoexistenceAvailable;
-
-    [ObservableProperty]
-    private string _wifiCoexistenceStatus = "";
-
-    [ObservableProperty]
-    private bool _wifiPowerSavingEnabled;
-
-    [ObservableProperty]
-    private bool _wifiPowerSavingAvailable;
-
-    [ObservableProperty]
-    private string _wifiPowerSavingStatus = "";
-
-    [ObservableProperty]
-    private bool _processingPeriodEnabled;
-
-    [ObservableProperty]
-    private bool _processingPeriodAvailable;
-
-    [ObservableProperty]
-    private string _processingPeriodStatus = "";
-
-    [ObservableProperty]
-    private bool _latencyQueryEnabled;
-
-    [ObservableProperty]
-    private bool _latencyQueryAvailable;
-
-    [ObservableProperty]
-    private string _latencyQueryStatus = "";
-
-    [ObservableProperty]
-    private bool _ldacRegistryEnabled;
-
-    [ObservableProperty]
-    private bool _ldacRegistryAvailable;
-
-    [ObservableProperty]
-    private string _ldacRegistryStatus = "";
-
-    [ObservableProperty]
-    private bool _externalEncoderEnabled;
-
-    [ObservableProperty]
-    private bool _externalEncoderAvailable;
-
-    [ObservableProperty]
-    private string _externalEncoderStatus = "";
-
-    [ObservableProperty]
-    private string _selectedEncoderCodec = "ldac";
-
-    [ObservableProperty]
-    private string _selectedEncoderQuality = "high";
-
-    public List<EncoderCodecOption> EncoderCodecOptions { get; } = new()
-    {
-        new("ldac", "LDAC (990 kbps)"),
-        new("aptx", "aptX (352 kbps)"),
-        new("aptxhd", "aptX HD (576 kbps)"),
-        new("sbc", "SBC (328 kbps)")
-    };
-
-    public List<EncoderQualityOption> EncoderQualityOptions { get; } = new()
-    {
-        new("high", "High (990 kbps)"),
-        new("standard", "Standard (660 kbps)"),
-        new("low", "Low (330 kbps)")
-    };
-
-    [ObservableProperty]
-    private bool _isFeatureOperationInProgress;
-
-    #endregion
-
     public event EventHandler? MinimizeToTrayRequested;
 
     public event EventHandler? ShowMainWindowRequested;
@@ -356,10 +264,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IProcessWatcherService processWatcher,
         IAudioQualityService audioQualityService,
         IBluetoothCodecMonitor codecMonitor,
-        IBluetoothAdapterService adapterService,
-        IFeatureManager featureManager,
-        IAudioLatencyService latencyService,
-        IEncoderService encoderService)
+        IBluetoothAdapterService adapterService)
     {
         _bluetoothService = bluetoothService;
         _audioService = audioService;
@@ -369,9 +274,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _audioQualityService = audioQualityService;
         _codecMonitor = codecMonitor;
         _adapterService = adapterService;
-        _featureManager = featureManager;
-        _latencyService = latencyService;
-        _encoderService = encoderService;
 
         _trayIcon = new TrayIconManager();
         _trayIcon.ExitRequested += (_, _) => ExitApplication();
@@ -379,6 +281,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         _profileManager.ProfileModeChanged += OnProfileModeChanged;
 
+        _bluetoothService.DeviceAdded += OnDeviceAdded;
         _bluetoothService.DeviceConnectionChanged += OnDeviceConnectionChanged;
 
         _settingsService.SettingsChanged += OnSettingsChanged;
@@ -408,7 +311,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CurrentModeName));
 
         _ = RefreshDiagnosticsAsync();
-        _ = RefreshFeatureStatesAsync();
     }
 
     private async void InitializeInBackground()
@@ -463,7 +365,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
             LoadSettingsToUI();
 
-            RefreshDevices();
+            await RefreshDevicesAsync();
             RefreshAdapters();
 
             if (string.IsNullOrEmpty(_settingsService.Settings.DefaultDeviceName))
@@ -490,7 +392,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
             }
 
             await RefreshDiagnosticsAsync();
-            await RefreshFeatureStatesAsync();
 
             Logger.Information("MainViewModel initialized");
         }
@@ -501,37 +402,49 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    private async Task RefreshStateAsync()
+    private async Task RefreshStateAsync(string? deviceName = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            var state = await _profileManager.GetDeviceProfileStateAsync(DefaultDeviceName);
-            CurrentState = state;
-            IsConnected = state != null;
-
-            if (state != null)
+            var resolvedDeviceName = deviceName ?? DefaultDeviceName;
+            if (string.IsNullOrWhiteSpace(resolvedDeviceName))
             {
-                StatusText = $"{state.DeviceName}: {state.CurrentMode}";
-            }
-            else
-            {
-                StatusText = Strings.Status_DeviceNotConnected;
+                await RunOnUiThreadAsync(() => ApplyProfileState(null));
+                return;
             }
 
-            _trayIcon.UpdateState(state);
+            var state = await _profileManager.GetDeviceProfileStateAsync(resolvedDeviceName, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
 
-            OnPropertyChanged(nameof(DeviceStatus));
-            OnPropertyChanged(nameof(IsDeviceConnected));
-            OnPropertyChanged(nameof(CurrentModeName));
-            OnPropertyChanged(nameof(CodecInfo));
-            OnPropertyChanged(nameof(IsMusicMode));
-            OnPropertyChanged(nameof(IsCallsMode));
+            await RunOnUiThreadAsync(() => ApplyProfileState(state));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             Logger.Error(ex, "Failed to refresh state");
-            StatusText = Strings.Status_Error;
+            await RunOnUiThreadAsync(() => StatusText = Strings.Status_Error);
         }
+    }
+
+    private void ApplyProfileState(DeviceProfileState? state)
+    {
+        CurrentState = state;
+        IsConnected = state != null;
+        StatusText = state != null
+            ? $"{state.DeviceName}: {state.CurrentMode}"
+            : Strings.Status_DeviceNotConnected;
+
+        _trayIcon.UpdateState(state);
+
+        OnPropertyChanged(nameof(DeviceStatus));
+        OnPropertyChanged(nameof(IsDeviceConnected));
+        OnPropertyChanged(nameof(CurrentModeName));
+        OnPropertyChanged(nameof(CodecInfo));
+        OnPropertyChanged(nameof(IsMusicMode));
+        OnPropertyChanged(nameof(IsCallsMode));
     }
 
 
@@ -557,71 +470,78 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task SetMusicModeAsync()
     {
-        if (!_profileManager.IsRunningAsAdmin)
-        {
-            ShowNotification(Strings.Notification_AdminRequired,
-                System.Windows.Forms.ToolTipIcon.Warning);
-            return;
-        }
-
-        Logger.Information("Setting Music mode...");
-        StatusText = $"{Strings.Mode_Music}...";
-
-        var success = await _profileManager.SetMusicModeAsync(DefaultDeviceName);
-
-        if (success)
-        {
-            _trayIcon.ShowModeChangedNotification(ProfileMode.Music);
-            UpdateStateAfterModeChange(ProfileMode.Music);
-            await Task.Delay(3000);
-            _audioService.Refresh();
-            await RefreshStateAsync();
-        }
-        else
-        {
-            ShowNotification(Strings.Notification_SwitchFailed,
-                System.Windows.Forms.ToolTipIcon.Error);
-            StatusText = Strings.Status_SwitchError;
-        }
+        await ApplyModeAsync(ProfileMode.Music);
     }
 
     [RelayCommand]
     private async Task SetCallsModeAsync()
     {
-        if (!_profileManager.IsRunningAsAdmin)
+        await ApplyModeAsync(ProfileMode.Calls);
+    }
+
+    private async Task ApplyModeAsync(ProfileMode mode, CancellationToken cancellationToken = default)
+    {
+        await _modeSwitchGate.WaitAsync(cancellationToken);
+        try
         {
-            ShowNotification(Strings.Notification_AdminRequired,
-                System.Windows.Forms.ToolTipIcon.Warning);
-            return;
+            if (!_profileManager.IsRunningAsAdmin)
+            {
+                await RunOnUiThreadAsync(() =>
+                    ShowNotification(Strings.Notification_AdminRequired, System.Windows.Forms.ToolTipIcon.Warning));
+                return;
+            }
+
+            var deviceName = DefaultDeviceName;
+            if (string.IsNullOrWhiteSpace(deviceName))
+            {
+                await RunOnUiThreadAsync(() => StatusText = Strings.Status_DeviceNotConnected);
+                return;
+            }
+
+            Logger.Information("Setting {Mode} mode for {DeviceName}...", mode, deviceName);
+            await RunOnUiThreadAsync(() =>
+                StatusText = mode == ProfileMode.Music ? $"{Strings.Mode_Music}..." : $"{Strings.Mode_Calls}...");
+
+            var success = mode == ProfileMode.Music
+                ? await _profileManager.SetMusicModeAsync(deviceName, cancellationToken)
+                : await _profileManager.SetCallsModeAsync(deviceName, cancellationToken);
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (success)
+            {
+                await RunOnUiThreadAsync(() =>
+                {
+                    _trayIcon.ShowModeChangedNotification(mode);
+                    UpdateStateAfterModeChange(mode, deviceName);
+                });
+
+                await Task.Delay(2000, cancellationToken);
+                _audioService.Refresh();
+                await RefreshStateAsync(deviceName, cancellationToken);
+            }
+            else
+            {
+                await RunOnUiThreadAsync(() =>
+                {
+                    ShowNotification(Strings.Notification_SwitchFailed, System.Windows.Forms.ToolTipIcon.Error);
+                    StatusText = Strings.Status_SwitchError;
+                });
+            }
         }
-
-        Logger.Information("Setting Calls mode...");
-        StatusText = $"{Strings.Mode_Calls}...";
-
-        var success = await _profileManager.SetCallsModeAsync(DefaultDeviceName);
-
-        if (success)
+        finally
         {
-            _trayIcon.ShowModeChangedNotification(ProfileMode.Calls);
-            UpdateStateAfterModeChange(ProfileMode.Calls);
-            await Task.Delay(3000);
-            _audioService.Refresh();
-            await RefreshStateAsync();
-        }
-        else
-        {
-            ShowNotification(Strings.Notification_SwitchFailed,
-                System.Windows.Forms.ToolTipIcon.Error);
-            StatusText = Strings.Status_SwitchError;
+            _modeSwitchGate.Release();
         }
     }
 
-    private void UpdateStateAfterModeChange(ProfileMode newMode)
+    private void UpdateStateAfterModeChange(ProfileMode newMode, string? deviceName = null)
     {
+        var resolvedDeviceName = string.IsNullOrWhiteSpace(deviceName) ? DefaultDeviceName : deviceName;
         CurrentState = new DeviceProfileState
         {
             DeviceId = CurrentState?.DeviceId ?? "",
-            DeviceName = DefaultDeviceName,
+            DeviceName = resolvedDeviceName,
             CurrentMode = newMode,
             IsA2dpEnabled = true,
             IsHfpEnabled = newMode == ProfileMode.Calls,
@@ -629,7 +549,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         };
 
         IsConnected = true;
-        StatusText = $"{DefaultDeviceName}: {newMode}";
+        StatusText = $"{resolvedDeviceName}: {newMode}";
 
         OnPropertyChanged(nameof(DeviceStatus));
         OnPropertyChanged(nameof(IsDeviceConnected));
@@ -640,15 +560,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         _trayIcon.UpdateState(CurrentState);
 
-        Logger.Information("UI updated: mode={Mode}, device={Device}", newMode, DefaultDeviceName);
+        Logger.Information("UI updated: mode={Mode}, device={Device}", newMode, resolvedDeviceName);
     }
 
-    private async Task SetModeAsync(ProfileMode mode)
+    private async Task SetModeAsync(ProfileMode mode, CancellationToken cancellationToken = default)
     {
         if (mode == ProfileMode.Music)
-            await SetMusicModeAsync();
+            await ApplyModeAsync(ProfileMode.Music, cancellationToken);
         else if (mode == ProfileMode.Calls)
-            await SetCallsModeAsync();
+            await ApplyModeAsync(ProfileMode.Calls, cancellationToken);
     }
 
     [RelayCommand]
@@ -663,7 +583,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         Logger.Information("Opening diagnostics window");
 
         var viewModel = new DiagnosticsViewModel(
-            _bluetoothService, _audioService, _profileManager, _settingsService, _audioQualityService, _latencyService, _encoderService);
+            _bluetoothService, _audioService, _profileManager, _settingsService, _audioQualityService);
         _diagnosticsWindow = new DiagnosticsWindow(viewModel);
         _diagnosticsWindow.Closed += (_, _) => _diagnosticsWindow = null;
         _diagnosticsWindow.Show();
@@ -677,36 +597,53 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private async void OnProfileModeChanged(object? sender, DeviceProfileState state)
     {
-        await System.Windows.Application.Current.Dispatcher.InvokeAsync(async () =>
-        {
-            CurrentState = state;
-            StatusText = $"{state.DeviceName}: {state.CurrentMode}";
-            _trayIcon.UpdateState(state);
-
-            await RefreshDiagnosticsAsync();
-        });
+        await RunOnUiThreadAsync(() => ApplyProfileState(state));
+        _ = RefreshDiagnosticsAsync();
     }
 
-    private async void OnDeviceConnectionChanged(object? sender, BluetoothDeviceInfo device)
+    private void OnDeviceAdded(object? sender, BluetoothDeviceInfo device)
+    {
+        Logger.Information("Device added to live list: {Name}", device.Name);
+        _ = RefreshDevicesAsync(device);
+    }
+
+    private void OnDeviceConnectionChanged(object? sender, BluetoothDeviceInfo device)
     {
         Logger.Information("Device connection changed: {Name} - {Connected}",
             device.Name, device.IsConnected);
 
-        await System.Windows.Application.Current.Dispatcher.InvokeAsync(async () =>
+        var nextCts = new CancellationTokenSource();
+        var previousCts = Interlocked.Exchange(ref _deviceConnectionCts, nextCts);
+        previousCts?.Cancel();
+
+        _ = HandleDeviceConnectionChangedAsync(device, nextCts);
+    }
+
+    private async Task HandleDeviceConnectionChangedAsync(BluetoothDeviceInfo device, CancellationTokenSource cancellationTokenSource)
+    {
+        var cancellationToken = cancellationTokenSource.Token;
+        var gateTaken = false;
+
+        try
         {
+            await _deviceConnectionGate.WaitAsync(cancellationToken);
+            gateTaken = true;
+
             if (device.IsConnected)
             {
-                RefreshDevices();
+                await RefreshDevicesAsync(device);
 
-                if (SelectedDevice == null || string.IsNullOrEmpty(_settingsService.Settings.DefaultDeviceName))
+                await RunOnUiThreadAsync(() =>
                 {
                     _settingsService.Settings.DefaultDeviceName = device.Name;
                     _settingsService.Settings.DefaultDeviceId = device.MacAddress;
-                    SelectedDevice = AvailableDevices.FirstOrDefault(d => d.Name == device.Name);
-                    Logger.Information("Set default device to: {Name}", device.Name);
-                }
+                    SelectedDevice = AvailableDevices.FirstOrDefault(d => d.Id == device.Id)
+                                     ?? AvailableDevices.FirstOrDefault(d => d.MacAddress == device.MacAddress)
+                                     ?? AvailableDevices.FirstOrDefault(d => d.Name == device.Name);
+                    Logger.Information("Selected connected device: {Name}", device.Name);
+                });
 
-                await WaitForAudioEndpointsAndRefreshAsync(device.Name);
+                await WaitForAudioEndpointsAndRefreshAsync(device.Name, cancellationToken);
             }
             else
             {
@@ -718,14 +655,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 if (isCurrentDevice)
                 {
                     Logger.Information("Current device disconnected, clearing state: {Name}", device.Name);
-                    await ClearDeviceStateAsync();
+                    await ClearDeviceStateAsync(clearSavedSelection: false);
                 }
 
-                RefreshDevices();
+                await RefreshDevicesAsync();
 
                 if (!isCurrentDevice)
                 {
-                    await RefreshStateAsync();
+                    await RefreshStateAsync(cancellationToken: cancellationToken);
                 }
             }
 
@@ -735,66 +672,84 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 {
                     ShowNotification($"{device.Name} подключено");
 
-                    if (_settingsService.Settings.AutoSwitchOnConnect)
-                    {
-                        var defaultMode = _settingsService.Settings.DefaultMode;
-                        Logger.Information("Auto-switching to {Mode} mode", defaultMode);
-
-                        await SetModeAsync(defaultMode);
-                    }
                 }
                 else
                 {
                     ShowNotification($"{device.Name} отключено");
                 }
             }
-        });
-    }
 
-    private async Task ClearDeviceStateAsync()
-    {
-        CurrentState = null;
-        IsConnected = false;
-        StatusText = Strings.Device_NotConnected;
-
-        _settingsService.Settings.DefaultDeviceName = "";
-        _settingsService.Settings.DefaultDeviceId = null;
-        SelectedDevice = null;
-
-        try
+            if (device.IsConnected && _settingsService.Settings.AutoSwitchOnConnect)
+            {
+                var defaultMode = _settingsService.Settings.DefaultMode;
+                Logger.Information("Auto-switching to {Mode} mode", defaultMode);
+                await SetModeAsync(defaultMode, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
         {
-            await _settingsService.SaveAsync();
-            Logger.Information("Settings saved after device disconnect");
+            Logger.Debug("Device connection handling canceled for {DeviceName}", device.Name);
         }
         catch (Exception ex)
         {
-            Logger.Warning(ex, "Failed to save settings after device disconnect");
+            Logger.Warning(ex, "Failed to handle device connection change for {DeviceName}", device.Name);
         }
+        finally
+        {
+            if (gateTaken)
+            {
+                _deviceConnectionGate.Release();
+            }
 
-        _trayIcon.UpdateState(null);
+            Interlocked.CompareExchange(ref _deviceConnectionCts, null, cancellationTokenSource);
 
-        OnPropertyChanged(nameof(DeviceStatus));
-        OnPropertyChanged(nameof(IsDeviceConnected));
-        OnPropertyChanged(nameof(CurrentModeName));
-        OnPropertyChanged(nameof(CodecInfo));
-        OnPropertyChanged(nameof(IsMusicMode));
-        OnPropertyChanged(nameof(IsCallsMode));
+            cancellationTokenSource.Dispose();
+        }
+    }
+
+    private async Task ClearDeviceStateAsync(bool clearSavedSelection)
+    {
+        await RunOnUiThreadAsync(() =>
+        {
+            ApplyProfileState(null);
+
+            if (clearSavedSelection)
+            {
+                _settingsService.Settings.DefaultDeviceName = "";
+                _settingsService.Settings.DefaultDeviceId = null;
+                SelectedDevice = null;
+            }
+        });
+
+        if (clearSavedSelection)
+        {
+            try
+            {
+                await _settingsService.SaveAsync();
+                Logger.Information("Settings saved after clearing selected device");
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning(ex, "Failed to save settings after clearing selected device");
+            }
+        }
 
         await RefreshDiagnosticsAsync();
     }
 
-    private async Task WaitForAudioEndpointsAndRefreshAsync(string deviceName)
+    private async Task WaitForAudioEndpointsAndRefreshAsync(string deviceName, CancellationToken cancellationToken = default)
     {
-        const int maxAttempts = 20;
-        const int delayMs = 2000;
+        const int maxAttempts = 18;
+        const int delayMs = 1000;
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Logger.Debug("Waiting for audio endpoints, attempt {Attempt}/{MaxAttempts}", attempt, maxAttempts);
 
             _audioService.Refresh();
 
-            await RefreshStateAsync();
+            await RefreshStateAsync(deviceName, cancellationToken);
 
             if (CurrentState != null)
             {
@@ -802,19 +757,24 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            await Task.Delay(delayMs);
+            await Task.Delay(delayMs, cancellationToken);
         }
 
         Logger.Warning("Audio endpoints not found after {MaxAttempts} attempts for device {DeviceName}",
             maxAttempts, deviceName);
     }
 
-    private async void OnProfileChangeRequired(object? sender, ProfileChangeEventArgs e)
+    private void OnProfileChangeRequired(object? sender, ProfileChangeEventArgs e)
     {
         if (!_settingsService.Settings.AutoSwitchByApp || !IsConnected)
             return;
 
-        await System.Windows.Application.Current.Dispatcher.InvokeAsync(async () =>
+        _ = HandleProfileChangeRequiredAsync(e);
+    }
+
+    private async Task HandleProfileChangeRequiredAsync(ProfileChangeEventArgs e)
+    {
+        try
         {
             if (e.RequiredProfile.HasValue)
             {
@@ -824,7 +784,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 Logger.Information("Profile change required by {Rule}: switching to {Profile}",
                     ruleName, e.RequiredProfile.Value);
 
-                ShowNotification($"{ruleName}: {GetModeName(e.RequiredProfile.Value)}");
+                await RunOnUiThreadAsync(() => ShowNotification($"{ruleName}: {GetModeName(e.RequiredProfile.Value)}"));
                 await SetModeAsync(e.RequiredProfile.Value);
             }
             else
@@ -833,12 +793,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
                 Logger.Information("No more profile rules active, switching back to {Mode}", targetMode);
 
-                ShowNotification(GetModeName(targetMode));
+                await RunOnUiThreadAsync(() => ShowNotification(GetModeName(targetMode)));
                 await SetModeAsync(targetMode);
 
                 _modeBeforeAutoSwitch = null;
             }
-        });
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning(ex, "Failed to apply process-triggered profile change");
+        }
     }
 
     private static string GetModeName(ProfileMode mode) => mode switch
@@ -889,15 +853,183 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void RefreshDevices()
+    private async Task RefreshDevicesAsync()
     {
-        var devices = _bluetoothService.GetPairedDevices().ToList();
-        AvailableDevices = devices;
+        await RefreshDevicesAsync(null);
+    }
 
-        SelectedDevice = devices.FirstOrDefault(d =>
-            d.Name.Equals(_settingsService.Settings.DefaultDeviceName, StringComparison.OrdinalIgnoreCase));
+    private async Task RefreshDevicesAsync(BluetoothDeviceInfo? preferredDevice, CancellationToken cancellationToken = default)
+    {
+        _audioService.Refresh();
+
+        var scannedDevices = await _bluetoothService.GetPairedAudioDevicesAsync(cancellationToken);
+        var devices = scannedDevices.ToList();
+
+        foreach (var endpointDevice in GetAudioEndpointDevices())
+        {
+            if (devices.All(d => !IsSameSelectableDevice(d, endpointDevice)))
+            {
+                devices.Add(endpointDevice);
+            }
+        }
+
+        if (preferredDevice != null && devices.All(d => d.Id != preferredDevice.Id))
+        {
+            devices.Add(preferredDevice);
+        }
+
+        devices = devices
+            .GroupBy(d => d.Id)
+            .Select(g => g.OrderByDescending(d => d.IsConnected).First())
+            .OrderByDescending(d => d.IsConnected)
+            .ThenBy(d => d.Name)
+            .ToList();
+
+        await RunOnUiThreadAsync(() =>
+        {
+            AvailableDevices = devices;
+
+            SelectedDevice = preferredDevice != null
+                ? devices.FirstOrDefault(d => d.Id == preferredDevice.Id)
+                  ?? devices.FirstOrDefault(d => d.MacAddress == preferredDevice.MacAddress)
+                  ?? devices.FirstOrDefault(d => d.Name.Equals(preferredDevice.Name, StringComparison.OrdinalIgnoreCase))
+                : devices.FirstOrDefault(d =>
+                    d.Name.Equals(_settingsService.Settings.DefaultDeviceName, StringComparison.OrdinalIgnoreCase));
+        });
 
         Logger.Debug("Found {Count} paired devices", devices.Count);
+    }
+
+    private IEnumerable<BluetoothDeviceInfo> GetAudioEndpointDevices()
+    {
+        var endpoints = _audioService.GetPlaybackEndpoints()
+            .Where(e => e.IsActive && e.IsPlayback)
+            .Where(e => e.IsBluetooth || e.IsA2dp || LooksLikeBluetoothAudioEndpoint(e))
+            .ToList();
+
+        var defaultPlayback = _audioService.GetDefaultPlaybackDevice();
+        if (defaultPlayback is { IsActive: true, IsPlayback: true } &&
+            endpoints.All(e => e.Id != defaultPlayback.Id) &&
+            (defaultPlayback.IsBluetooth || defaultPlayback.IsA2dp || LooksLikeBluetoothAudioEndpoint(defaultPlayback)))
+        {
+            endpoints.Add(defaultPlayback);
+        }
+
+        foreach (var endpoint in endpoints)
+        {
+            var displayName = GetSelectableEndpointName(endpoint);
+            yield return new BluetoothDeviceInfo
+            {
+                Id = $"audio-endpoint:{endpoint.Id}",
+                Name = displayName,
+                BluetoothAddress = 0,
+                IsConnected = true,
+                IsPaired = true,
+                SupportsA2dp = true,
+                SupportsHfp = endpoint.IsHfp
+            };
+        }
+    }
+
+    private static bool IsSameSelectableDevice(BluetoothDeviceInfo left, BluetoothDeviceInfo right)
+    {
+        if (left.Id.Equals(right.Id, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (left.BluetoothAddress != 0 && left.BluetoothAddress == right.BluetoothAddress)
+            return true;
+
+        return left.Name.Equals(right.Name, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetSelectableEndpointName(Models.AudioEndpointInfo endpoint)
+    {
+        var name = endpoint.FriendlyName;
+
+        var openParen = name.LastIndexOf('(');
+        var closeParen = name.LastIndexOf(')');
+        if (openParen >= 0 && closeParen > openParen)
+        {
+            var inner = name.Substring(openParen + 1, closeParen - openParen - 1).Trim();
+            if (!string.IsNullOrWhiteSpace(inner) &&
+                !inner.Contains("Stereo", StringComparison.OrdinalIgnoreCase) &&
+                !inner.Contains("Hands-Free", StringComparison.OrdinalIgnoreCase) &&
+                !inner.Contains("Headset", StringComparison.OrdinalIgnoreCase))
+            {
+                return inner;
+            }
+        }
+
+        return name;
+    }
+
+    private static bool LooksLikeBluetoothAudioEndpoint(Models.AudioEndpointInfo endpoint)
+    {
+        var text = $"{endpoint.Id} {endpoint.Name} {endpoint.FriendlyName}";
+        string[] bluetoothHints =
+        {
+            "a2dp",
+            "bluetooth",
+            "bth",
+            "bthenum",
+            "bthhfenum",
+            "hands-free",
+            "handsfree",
+            "headphones",
+            "headset",
+            "stereo",
+            "беспровод",
+            "bluetooth",
+            "гарнитура",
+            "наушники"
+        };
+
+        if (bluetoothHints.Any(hint => text.Contains(hint, StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        if (LooksLikeExternalNamedEndpoint(endpoint.FriendlyName))
+            return true;
+
+        string[] likelySpeakerBrands =
+        {
+            "anker",
+            "bose",
+            "charge",
+            "flip",
+            "harman",
+            "jbl",
+            "marshall",
+            "sony",
+            "soundcore",
+            "ultimate ears",
+            "wonderboom",
+            "xtreme"
+        };
+
+        return likelySpeakerBrands.Any(brand => text.Contains(brand, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool LooksLikeExternalNamedEndpoint(string friendlyName)
+    {
+        if (!friendlyName.Contains('(') || !friendlyName.Contains(')'))
+            return false;
+
+        string[] builtInHints =
+        {
+            "amd",
+            "conexant",
+            "display audio",
+            "high definition audio",
+            "intel",
+            "nvidia",
+            "realtek",
+            "usb audio",
+            "аудио высокой четкости",
+            "дисплей",
+            "реалтек"
+        };
+
+        return builtInHints.All(hint => !friendlyName.Contains(hint, StringComparison.OrdinalIgnoreCase));
     }
 
     [RelayCommand]
@@ -1043,25 +1175,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
             var currentMMCSS = _audioQualityService.AreMMCSSOptimizationsApplied();
             var mmcssChanged = false;
-            var mmcssFailed = false;
 
             if (MmcssOptimizationsEnabled && !currentMMCSS)
             {
                 mmcssChanged = _audioQualityService.ApplyMMCSSOptimizations();
-                if (!mmcssChanged)
-                {
-                    mmcssFailed = true;
-                    MmcssOptimizationsEnabled = false;
-                }
             }
             else if (!MmcssOptimizationsEnabled && currentMMCSS)
             {
                 mmcssChanged = _audioQualityService.RevertMMCSSOptimizations();
-                if (!mmcssChanged)
-                {
-                    mmcssFailed = true;
-                    MmcssOptimizationsEnabled = true;
-                }
             }
 
             if (success)
@@ -1078,12 +1199,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     message += Strings.CurrentLanguage == Language.Russian
                         ? "\n\nИзменения MMCSS требуют перезагрузки компьютера."
                         : "\n\nMMCSS changes require a computer restart.";
-                }
-                else if (mmcssFailed)
-                {
-                    message += Strings.CurrentLanguage == Language.Russian
-                        ? "\n\n⚠️ Не удалось изменить настройки MMCSS. Запустите программу от имени администратора."
-                        : "\n\n⚠️ Failed to change MMCSS settings. Run the program as administrator.";
                 }
 
                 System.Windows.MessageBox.Show(
@@ -1493,7 +1608,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
                 await Task.Delay(2000);
                 RefreshAdapters();
-                RefreshDevices();
+                await RefreshDevicesAsync();
                 await RefreshDiagnosticsAsync();
             }
             else
@@ -1525,236 +1640,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     #endregion
 
-    #region Feature Management Methods
-
-    [RelayCommand]
-    private async Task RefreshFeatureStatesAsync()
-    {
-        try
-        {
-            await _featureManager.LoadStateAsync();
-
-            foreach (var featureId in Enum.GetValues<Models.FeatureId>())
-            {
-                var state = _featureManager.GetStateInfo(featureId);
-                var canEnable = _featureManager.CanEnable(featureId);
-                var isEnabled = state.State == Models.FeatureState.Enabled;
-
-                var isExperimental = featureId is Models.FeatureId.LdacRegistry or Models.FeatureId.ExternalEncoder;
-                (bool CanActivate, string? Reason) canActivate = (canEnable.CanEnable, canEnable.Reason);
-
-                if (isExperimental && !isEnabled)
-                {
-                    canActivate = await _featureManager.CanActivateAsync(featureId);
-                }
-
-                var statusText = GetFeatureStatusText(state, canActivate);
-
-                switch (featureId)
-                {
-                    case Models.FeatureId.SmartTransition:
-                        SmartTransitionEnabled = isEnabled;
-                        SmartTransitionAvailable = canEnable.CanEnable || isEnabled;
-                        SmartTransitionStatus = statusText;
-                        break;
-                    case Models.FeatureId.WifiCoexistence:
-                        WifiCoexistenceEnabled = isEnabled;
-                        WifiCoexistenceAvailable = canEnable.CanEnable || isEnabled;
-                        WifiCoexistenceStatus = statusText;
-                        break;
-                    case Models.FeatureId.WifiPowerSaving:
-                        WifiPowerSavingEnabled = isEnabled;
-                        WifiPowerSavingAvailable = canEnable.CanEnable || isEnabled;
-                        WifiPowerSavingStatus = statusText;
-                        break;
-                    case Models.FeatureId.ProcessingPeriodControl:
-                        ProcessingPeriodEnabled = isEnabled;
-                        ProcessingPeriodAvailable = canEnable.CanEnable || isEnabled;
-                        ProcessingPeriodStatus = statusText;
-                        break;
-                    case Models.FeatureId.LatencyQuery:
-                        LatencyQueryEnabled = isEnabled;
-                        LatencyQueryAvailable = canEnable.CanEnable || isEnabled;
-                        LatencyQueryStatus = statusText;
-                        break;
-                    case Models.FeatureId.LdacRegistry:
-                        LdacRegistryEnabled = isEnabled;
-                        LdacRegistryAvailable = canActivate.CanActivate || isEnabled;
-                        LdacRegistryStatus = statusText;
-                        break;
-                    case Models.FeatureId.ExternalEncoder:
-                        ExternalEncoderEnabled = isEnabled;
-                        ExternalEncoderAvailable = canActivate.CanActivate || isEnabled;
-                        ExternalEncoderStatus = statusText;
-                        break;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Error(ex, "Failed to refresh feature states");
-        }
-    }
-
-    private static string GetFeatureStatusText(Models.FeatureStateInfo state, (bool CanActivate, string? Reason) canActivate)
-    {
-        if (state.State == Models.FeatureState.Enabled)
-            return Strings.Get("Feature.Status.Active");
-        if (state.State == Models.FeatureState.Error)
-            return state.ErrorMessage ?? Strings.Get("Feature.Status.Error");
-        if (!canActivate.CanActivate)
-            return LocalizeReason(canActivate.Reason) ?? Strings.Get("Feature.Status.Unavailable");
-        return Strings.Get("Feature.Status.Available");
-    }
-
-    private static string? LocalizeReason(string? reason)
-    {
-        if (string.IsNullOrEmpty(reason))
-            return null;
-
-        if (reason.StartsWith("Conflicts with"))
-        {
-            var colonIdx = reason.IndexOf(':');
-            if (colonIdx > 0)
-            {
-                var featuresStr = reason[(colonIdx + 1)..].Trim();
-                var featureIds = featuresStr.Split(',', StringSplitOptions.RemoveEmptyEntries);
-                var localizedNames = featureIds
-                    .Select(id => Strings.GetFeatureName(id.Trim()))
-                    .ToArray();
-                return string.Format(Strings.Feature_ConflictsWithShort, string.Join(", ", localizedNames));
-            }
-        }
-
-        return reason;
-    }
-
-    [RelayCommand]
-    private async Task ToggleFeatureAsync(Models.FeatureId featureId)
-    {
-        if (IsFeatureOperationInProgress) return;
-
-        IsFeatureOperationInProgress = true;
-        try
-        {
-            var state = _featureManager.GetStateInfo(featureId);
-            if (state.State == Models.FeatureState.Enabled)
-            {
-                var result = await _featureManager.DisableAsync(featureId);
-                if (!result.Success)
-                {
-                    ShowNotification(result.ErrorMessage ?? Strings.Get("Feature.DisableFailed"),
-                        System.Windows.Forms.ToolTipIcon.Error);
-                }
-            }
-            else
-            {
-                var conflicts = _featureManager.GetConflicts(featureId);
-                var enabledConflicts = conflicts
-                    .Where(c => _featureManager.GetStateInfo(c).State == Models.FeatureState.Enabled)
-                    .ToList();
-
-                if (enabledConflicts.Any())
-                {
-                    var conflictNames = string.Join(", ", enabledConflicts.Select(GetFeatureDisplayName));
-                    var message = string.Format(Strings.Get("Feature.ConflictWarning"), conflictNames);
-
-                    var dialogResult = System.Windows.MessageBox.Show(
-                        message,
-                        Strings.Dialog_Warning,
-                        System.Windows.MessageBoxButton.YesNo,
-                        System.Windows.MessageBoxImage.Warning);
-
-                    if (dialogResult != System.Windows.MessageBoxResult.Yes)
-                    {
-                        return;
-                    }
-
-                    foreach (var conflictId in enabledConflicts)
-                    {
-                        await _featureManager.DisableAsync(conflictId);
-                    }
-                }
-
-                var result = await _featureManager.EnableAsync(featureId);
-                if (!result.Success)
-                {
-                    ShowNotification(result.ErrorMessage ?? Strings.Get("Feature.EnableFailed"),
-                        System.Windows.Forms.ToolTipIcon.Error);
-                }
-            }
-
-            await RefreshFeatureStatesAsync();
-        }
-        finally
-        {
-            IsFeatureOperationInProgress = false;
-        }
-    }
-
-    private static string GetFeatureDisplayName(Models.FeatureId featureId) => featureId switch
-    {
-        Models.FeatureId.SmartTransition => Strings.Get("Feature.SmartTransition"),
-        Models.FeatureId.WifiCoexistence => Strings.Get("Feature.WifiCoexistence"),
-        Models.FeatureId.WifiPowerSaving => Strings.Get("Feature.WifiPowerSaving"),
-        Models.FeatureId.ProcessingPeriodControl => Strings.Get("Feature.ProcessingPeriod"),
-        Models.FeatureId.LatencyQuery => Strings.Get("Feature.LatencyQuery"),
-        Models.FeatureId.LdacRegistry => Strings.Get("Feature.LdacRegistry"),
-        Models.FeatureId.ExternalEncoder => Strings.Get("Feature.ExternalEncoder"),
-        _ => featureId.ToString()
-    };
-
-    [RelayCommand]
-    private Task ToggleSmartTransitionAsync() => ToggleFeatureAsync(Models.FeatureId.SmartTransition);
-
-    [RelayCommand]
-    private Task ToggleWifiCoexistenceAsync() => ToggleFeatureAsync(Models.FeatureId.WifiCoexistence);
-
-    [RelayCommand]
-    private Task ToggleWifiPowerSavingAsync() => ToggleFeatureAsync(Models.FeatureId.WifiPowerSaving);
-
-    [RelayCommand]
-    private Task ToggleProcessingPeriodAsync() => ToggleFeatureAsync(Models.FeatureId.ProcessingPeriodControl);
-
-    [RelayCommand]
-    private Task ToggleLatencyQueryAsync() => ToggleFeatureAsync(Models.FeatureId.LatencyQuery);
-
-    [RelayCommand]
-    private Task ToggleLdacRegistryAsync() => ToggleFeatureAsync(Models.FeatureId.LdacRegistry);
-
-    [RelayCommand]
-    private Task ToggleExternalEncoderAsync() => ToggleFeatureAsync(Models.FeatureId.ExternalEncoder);
-
-    [RelayCommand]
-    private async Task ApplyEncoderSettingsAsync()
-    {
-        if (!ExternalEncoderEnabled || !_encoderService.IsServiceAvailable)
-        {
-            ShowNotification(Strings.Get("Encoder.NotRunning"), System.Windows.Forms.ToolTipIcon.Warning);
-            return;
-        }
-
-        try
-        {
-            var success = await _encoderService.SetQualityAsync(SelectedEncoderQuality);
-            if (success)
-            {
-                ShowNotification(Strings.Get("Encoder.SettingsApplied"));
-            }
-            else
-            {
-                ShowNotification(Strings.Get("Encoder.SettingsFailed"), System.Windows.Forms.ToolTipIcon.Error);
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Error(ex, "Failed to apply encoder settings");
-            ShowNotification($"{Strings.Status_Error}: {ex.Message}", System.Windows.Forms.ToolTipIcon.Error);
-        }
-    }
-
-    #endregion
-
     private void OnSettingsChanged(object? sender, AppSettings settings)
     {
         Logger.Information("Settings changed, updating...");
@@ -1773,6 +1658,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _ = RefreshStateAsync();
     }
 
+    private static async Task RunOnUiThreadAsync(Action action)
+    {
+        var dispatcher = System.Windows.Application.Current.Dispatcher;
+        if (dispatcher.CheckAccess())
+        {
+            action();
+            return;
+        }
+
+        await dispatcher.InvokeAsync(action);
+    }
+
     private void ShowNotification(string message, System.Windows.Forms.ToolTipIcon icon = System.Windows.Forms.ToolTipIcon.Info)
     {
         if (_settingsService.Settings.ShowNotifications)
@@ -1786,11 +1683,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (_disposed) return;
 
         _profileManager.ProfileModeChanged -= OnProfileModeChanged;
+        _bluetoothService.DeviceAdded -= OnDeviceAdded;
         _bluetoothService.DeviceConnectionChanged -= OnDeviceConnectionChanged;
         _settingsService.SettingsChanged -= OnSettingsChanged;
         _processWatcher.ProfileChangeRequired -= OnProfileChangeRequired;
         Strings.LanguageChanged -= OnLanguageChanged;
         _codecMonitor.CodecDetected -= OnCodecDetected;
+
+        _deviceConnectionCts?.Cancel();
+        _deviceConnectionCts?.Dispose();
+        _deviceConnectionGate.Dispose();
+        _modeSwitchGate.Dispose();
 
         _trayIcon.Dispose();
         _processWatcher.Dispose();
@@ -1803,7 +1706,3 @@ public partial class MainViewModel : ObservableObject, IDisposable
         GC.SuppressFinalize(this);
     }
 }
-
-public record EncoderCodecOption(string Value, string DisplayName);
-
-public record EncoderQualityOption(string Value, string DisplayName);

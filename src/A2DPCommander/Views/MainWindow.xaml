@@ -9,8 +9,10 @@
         xmlns:loc="clr-namespace:BTAudioDriver.Localization"
         mc:Ignorable="d"
         Title="A2DP Commander"
-        Width="580" Height="520"
-        MinWidth="500" MinHeight="450"
+        Width="760" Height="660"
+        MinWidth="640" MinHeight="540"
+        FontFamily="Segoe UI Variable, Segoe UI"
+        Background="#F6F8FB"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}">
@@ -21,29 +23,62 @@
         <converters:ProfileModeToStringConverter x:Key="ProfileModeToStringConverter"/>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
 
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="BorderBrushSoft" Color="#DDE4EE"/>
+        <SolidColorBrush x:Key="TextMutedBrush" Color="#64748B"/>
+
         <Style x:Key="ModeButtonStyle" TargetType="Button">
-            <Setter Property="Height" Value="90"/>
-            <Setter Property="Margin" Value="5"/>
+            <Setter Property="Height" Value="124"/>
+            <Setter Property="Margin" Value="8"/>
             <Setter Property="FontSize" Value="16"/>
             <Setter Property="Cursor" Value="Hand"/>
         </Style>
         <Style x:Key="StatusTextStyle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontSize" Value="14"/>
             <Setter Property="Margin" Value="0,2"/>
         </Style>
+        <Style TargetType="Button">
+            <Setter Property="MinHeight" Value="32"/>
+            <Setter Property="Padding" Value="14,7"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background" Value="#FFFFFF"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="#0F172A"/>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="MinHeight" Value="32"/>
+            <Setter Property="Padding" Value="8,4"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="MinHeight" Value="30"/>
+            <Setter Property="Padding" Value="8,4"/>
+        </Style>
+        <Style TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <Style TargetType="TabItem">
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
         <Style TargetType="GroupBox">
-            <Setter Property="Margin" Value="0,0,0,10"/>
-            <Setter Property="Padding" Value="10"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}"/>
+            <Setter Property="Foreground" Value="#0F172A"/>
         </Style>
         <Style TargetType="CheckBox">
-            <Setter Property="Margin" Value="0,4"/>
+            <Setter Property="Margin" Value="0,5"/>
         </Style>
         <Style TargetType="RadioButton">
-            <Setter Property="Margin" Value="0,3"/>
+            <Setter Property="Margin" Value="0,4"/>
         </Style>
     </Window.Resources>
 
-    <Grid>
+    <Grid Background="#F6F8FB">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -51,38 +86,49 @@
         </Grid.RowDefinitions>
 
         <!-- Шапка со статусом устройства -->
-        <Border Grid.Row="0" Background="#F5F5F5" Padding="15,10">
-            <StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <Ellipse Width="10" Height="10" Margin="0,0,8,0">
-                        <Ellipse.Style>
-                            <Style TargetType="Ellipse">
-                                <Setter Property="Fill" Value="#4CAF50"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsDeviceConnected}" Value="False">
-                                        <Setter Property="Fill" Value="#F44336"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Ellipse.Style>
-                    </Ellipse>
-                    <TextBlock Text="{Binding DeviceStatus}" Style="{StaticResource StatusTextStyle}" FontWeight="SemiBold"/>
+        <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,0,0,1" Padding="20,14">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="10" Height="10" Margin="0,0,8,0">
+                            <Ellipse.Style>
+                                <Style TargetType="Ellipse">
+                                    <Setter Property="Fill" Value="#4CAF50"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDeviceConnected}" Value="False">
+                                            <Setter Property="Fill" Value="#F44336"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Ellipse.Style>
+                        </Ellipse>
+                        <TextBlock Text="{Binding DeviceStatus}" Style="{StaticResource StatusTextStyle}" FontWeight="SemiBold" Foreground="#0F172A"/>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource StatusTextStyle}" Margin="18,0,0,0">
+                        <Run Text="{Binding MainWindow_CurrentMode, Source={x:Static loc:LocalizationManager.Instance}, Mode=OneWay}"/>
+                        <Run Text="{Binding CurrentModeName, Mode=OneWay}" FontWeight="SemiBold"/>
+                        <Run Text=" - " Foreground="{StaticResource TextMutedBrush}"/>
+                        <Run Text="{Binding CodecInfo, Mode=OneWay}" Foreground="{StaticResource TextMutedBrush}"/>
+                    </TextBlock>
                 </StackPanel>
-                <TextBlock Style="{StaticResource StatusTextStyle}" Margin="18,0,0,0">
-                    <Run Text="{Binding MainWindow_CurrentMode, Source={x:Static loc:LocalizationManager.Instance}, Mode=OneWay}"/>
-                    <Run Text="{Binding CurrentModeName, Mode=OneWay}" FontWeight="SemiBold"/>
-                    <Run Text=" - " Foreground="Gray"/>
-                    <Run Text="{Binding CodecInfo, Mode=OneWay}" Foreground="Gray"/>
-                </TextBlock>
-            </StackPanel>
+
+                <Button Grid.Column="1" Content="{Binding MainWindow_MinimizeToTray, Source={x:Static loc:LocalizationManager.Instance}}"
+                        Command="{Binding MinimizeToTrayCommand}"
+                        Padding="12,6" VerticalAlignment="Center"/>
+            </Grid>
         </Border>
 
         <!-- Основной контент с вкладками -->
-        <TabControl Grid.Row="1" Margin="10">
+        <TabControl Grid.Row="1" Margin="16">
 
             <!-- Вкладка "Управление" -->
             <TabItem Header="{Binding Tab_Control, Source={x:Static loc:LocalizationManager.Instance}}">
-                <Grid Margin="10">
+                <Grid Margin="4,16,4,4">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
@@ -98,22 +144,22 @@
                                 IsEnabled="{Binding IsMusicMode, Converter={StaticResource InverseBoolConverter}}">
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
-                                    <Border x:Name="border" CornerRadius="8" BorderThickness="2" Background="#E3F2FD" BorderBrush="#2196F3">
+                                    <Border x:Name="border" CornerRadius="8" BorderThickness="1" Background="#EFF6FF" BorderBrush="#93C5FD">
                                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                            <TextBlock Text="🎵" FontSize="32" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="♫" FontSize="34" HorizontalAlignment="Center" Foreground="#1D4ED8"/>
                                             <TextBlock x:Name="titleText" Text="{Binding Mode_Music, Source={x:Static loc:LocalizationManager.Instance}}" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="Black"/>
-                                            <TextBlock x:Name="descText" Text="{Binding Mode_MusicDesc, Source={x:Static loc:LocalizationManager.Instance}}" FontSize="11" Foreground="#333" HorizontalAlignment="Center"/>
+                                            <TextBlock x:Name="descText" Text="{Binding Mode_MusicDesc, Source={x:Static loc:LocalizationManager.Instance}}" FontSize="12" Foreground="#475569" HorizontalAlignment="Center"/>
                                         </StackPanel>
                                     </Border>
                                     <ControlTemplate.Triggers>
                                         <DataTrigger Binding="{Binding IsMusicMode}" Value="True">
-                                            <Setter TargetName="border" Property="Background" Value="#2196F3"/>
-                                            <Setter TargetName="border" Property="BorderBrush" Value="#1976D2"/>
+                                            <Setter TargetName="border" Property="Background" Value="#1F6FEB"/>
+                                            <Setter TargetName="border" Property="BorderBrush" Value="#1D4ED8"/>
                                             <Setter TargetName="titleText" Property="Foreground" Value="White"/>
                                             <Setter TargetName="descText" Property="Foreground" Value="White"/>
                                         </DataTrigger>
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="border" Property="Background" Value="#BBDEFB"/>
+                                            <Setter TargetName="border" Property="Background" Value="#DBEAFE"/>
                                         </Trigger>
                                         <MultiDataTrigger>
                                             <MultiDataTrigger.Conditions>
@@ -131,11 +177,11 @@
                                 IsEnabled="{Binding IsCallsMode, Converter={StaticResource InverseBoolConverter}}">
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
-                                    <Border x:Name="border" CornerRadius="8" BorderThickness="2" Background="#E8F5E9" BorderBrush="#4CAF50">
+                                    <Border x:Name="border" CornerRadius="8" BorderThickness="1" Background="#ECFDF5" BorderBrush="#86EFAC">
                                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                            <TextBlock Text="🎤" FontSize="32" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="MIC" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center" Foreground="#047857"/>
                                             <TextBlock x:Name="titleText" Text="{Binding Mode_Calls, Source={x:Static loc:LocalizationManager.Instance}}" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="Black"/>
-                                            <TextBlock x:Name="descText" Text="{Binding Mode_CallsDesc, Source={x:Static loc:LocalizationManager.Instance}}" FontSize="11" Foreground="#333" HorizontalAlignment="Center"/>
+                                            <TextBlock x:Name="descText" Text="{Binding Mode_CallsDesc, Source={x:Static loc:LocalizationManager.Instance}}" FontSize="12" Foreground="#475569" HorizontalAlignment="Center"/>
                                         </StackPanel>
                                     </Border>
                                     <ControlTemplate.Triggers>
@@ -280,199 +326,11 @@
                             </StackPanel>
                         </GroupBox>
 
-                        <!-- Расширенные функции -->
-                        <GroupBox>
-                            <GroupBox.Header>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="{Binding Feature_Title, Source={x:Static loc:LocalizationManager.Instance}}" VerticalAlignment="Center"/>
-                                    <TextBlock Text=" (Beta)" Foreground="Orange" FontSize="10" VerticalAlignment="Center" Margin="5,0,0,0"/>
-                                </StackPanel>
-                            </GroupBox.Header>
-                            <StackPanel>
-                                <TextBlock Text="{Binding Feature_Description, Source={x:Static loc:LocalizationManager.Instance}}"
-                                           Foreground="Gray" FontSize="11" Margin="0,0,0,10"/>
-
-                                <!-- Smart Transition -->
-                                <Grid Margin="0,2">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <CheckBox Grid.Column="0" IsChecked="{Binding SmartTransitionEnabled, Mode=OneWay}"
-                                              IsEnabled="{Binding SmartTransitionAvailable}"
-                                              Command="{Binding ToggleSmartTransitionCommand}"/>
-                                    <StackPanel Grid.Column="1" Margin="5,0,0,0">
-                                        <TextBlock Text="{Binding Feature_SmartTransition, Source={x:Static loc:LocalizationManager.Instance}}"/>
-                                        <TextBlock Text="{Binding Feature_SmartTransition_Desc, Source={x:Static loc:LocalizationManager.Instance}}"
-                                                   FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="2" Text="{Binding SmartTransitionStatus}" FontSize="10" Foreground="Gray"
-                                               VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                </Grid>
-
-                                <!-- Wi-Fi Coexistence -->
-                                <Grid Margin="0,8,0,2" ToolTip="{Binding Feature_WifiCoexistence_Tooltip, Source={x:Static loc:LocalizationManager.Instance}}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <CheckBox Grid.Column="0" IsChecked="{Binding WifiCoexistenceEnabled, Mode=OneWay}"
-                                              IsEnabled="{Binding WifiCoexistenceAvailable}"
-                                              Command="{Binding ToggleWifiCoexistenceCommand}"/>
-                                    <StackPanel Grid.Column="1" Margin="5,0,0,0">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding Feature_WifiCoexistence, Source={x:Static loc:LocalizationManager.Instance}}"/>
-                                            <TextBlock Text=" ⚠️" Foreground="Orange" FontSize="10" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                        <TextBlock Text="{Binding Feature_WifiCoexistence_Desc, Source={x:Static loc:LocalizationManager.Instance}}"
-                                                   FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="2" Text="{Binding WifiCoexistenceStatus}" FontSize="10" Foreground="Gray"
-                                               VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                </Grid>
-
-                                <!-- Wi-Fi Power Saving -->
-                                <Grid Margin="0,8,0,2" ToolTip="{Binding Feature_WifiPowerSaving_Tooltip, Source={x:Static loc:LocalizationManager.Instance}}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <CheckBox Grid.Column="0" IsChecked="{Binding WifiPowerSavingEnabled, Mode=OneWay}"
-                                              IsEnabled="{Binding WifiPowerSavingAvailable}"
-                                              Command="{Binding ToggleWifiPowerSavingCommand}"/>
-                                    <StackPanel Grid.Column="1" Margin="5,0,0,0">
-                                        <TextBlock Text="{Binding Feature_WifiPowerSaving, Source={x:Static loc:LocalizationManager.Instance}}"/>
-                                        <TextBlock Text="{Binding Feature_WifiPowerSaving_Desc, Source={x:Static loc:LocalizationManager.Instance}}"
-                                                   FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="2" Text="{Binding WifiPowerSavingStatus}" FontSize="10" Foreground="Gray"
-                                               VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                </Grid>
-
-                                <!-- Processing Period Control -->
-                                <Grid Margin="0,8,0,2">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <CheckBox Grid.Column="0" IsChecked="{Binding ProcessingPeriodEnabled, Mode=OneWay}"
-                                              IsEnabled="{Binding ProcessingPeriodAvailable}"
-                                              Command="{Binding ToggleProcessingPeriodCommand}"/>
-                                    <StackPanel Grid.Column="1" Margin="5,0,0,0">
-                                        <TextBlock Text="{Binding Feature_ProcessingPeriod, Source={x:Static loc:LocalizationManager.Instance}}"/>
-                                        <TextBlock Text="{Binding Feature_ProcessingPeriod_Desc, Source={x:Static loc:LocalizationManager.Instance}}"
-                                                   FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="2" Text="{Binding ProcessingPeriodStatus}" FontSize="10" Foreground="Gray"
-                                               VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                </Grid>
-
-                                <!-- Latency Query -->
-                                <Grid Margin="0,8,0,2">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <CheckBox Grid.Column="0" IsChecked="{Binding LatencyQueryEnabled, Mode=OneWay}"
-                                              IsEnabled="{Binding LatencyQueryAvailable}"
-                                              Command="{Binding ToggleLatencyQueryCommand}"/>
-                                    <StackPanel Grid.Column="1" Margin="5,0,0,0">
-                                        <TextBlock Text="{Binding Feature_LatencyQuery, Source={x:Static loc:LocalizationManager.Instance}}"/>
-                                        <TextBlock Text="{Binding Feature_LatencyQuery_Desc, Source={x:Static loc:LocalizationManager.Instance}}"
-                                                   FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="2" Text="{Binding LatencyQueryStatus}" FontSize="10" Foreground="Gray"
-                                               VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                </Grid>
-
-                                <!-- Разделитель для экспериментальных функций -->
-                                <Rectangle Height="1" Fill="#E0E0E0" Margin="0,12,0,8"/>
-                                <TextBlock Text="{Binding Feature_Experimental, Source={x:Static loc:LocalizationManager.Instance}}"
-                                           FontWeight="SemiBold" FontSize="11" Foreground="#FF6B00" Margin="0,0,0,8"/>
-
-                                <!-- LDAC Registry (Experimental) -->
-                                <Grid Margin="0,2" ToolTip="{Binding Feature_LdacRegistry_Tooltip, Source={x:Static loc:LocalizationManager.Instance}}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <CheckBox Grid.Column="0" IsChecked="{Binding LdacRegistryEnabled, Mode=OneWay}"
-                                              IsEnabled="{Binding LdacRegistryAvailable}"
-                                              Command="{Binding ToggleLdacRegistryCommand}">
-                                        <CheckBox.Content>
-                                            <StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="{Binding Feature_LdacRegistry, Source={x:Static loc:LocalizationManager.Instance}}"/>
-                                                    <TextBlock Text=" ⚠️" Foreground="#FF6B00" FontSize="10" VerticalAlignment="Center"/>
-                                                </StackPanel>
-                                                <TextBlock Text="{Binding Feature_LdacRegistry_Desc, Source={x:Static loc:LocalizationManager.Instance}}"
-                                                           FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
-                                            </StackPanel>
-                                        </CheckBox.Content>
-                                    </CheckBox>
-                                    <TextBlock Grid.Column="2" Text="{Binding LdacRegistryStatus}" FontSize="10" Foreground="Gray"
-                                               VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                </Grid>
-
-                                <!-- External Encoder (Experimental) -->
-                                <Grid Margin="0,8,0,2" ToolTip="{Binding Feature_ExternalEncoder_Tooltip, Source={x:Static loc:LocalizationManager.Instance}}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <CheckBox Grid.Column="0" IsChecked="{Binding ExternalEncoderEnabled, Mode=OneWay}"
-                                              IsEnabled="{Binding ExternalEncoderAvailable}"
-                                              Command="{Binding ToggleExternalEncoderCommand}">
-                                        <CheckBox.Content>
-                                            <StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="{Binding Feature_ExternalEncoder, Source={x:Static loc:LocalizationManager.Instance}}"/>
-                                                    <TextBlock Text=" ⚠️ (Rust)" Foreground="#FF6B00" FontSize="10" VerticalAlignment="Center"/>
-                                                </StackPanel>
-                                                <TextBlock Text="{Binding Feature_ExternalEncoder_Desc, Source={x:Static loc:LocalizationManager.Instance}}"
-                                                           FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
-                                            </StackPanel>
-                                        </CheckBox.Content>
-                                    </CheckBox>
-                                </Grid>
-
-                                <!-- Encoder Settings -->
-                                <StackPanel Margin="25,8,0,0">
-                                    <Grid IsEnabled="{Binding ExternalEncoderEnabled}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="120"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="120"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{Binding Encoder_Codec, Source={x:Static loc:LocalizationManager.Instance}}"
-                                                   VerticalAlignment="Center" Margin="0,0,8,0" FontSize="11"/>
-                                        <ComboBox Grid.Column="1" ItemsSource="{Binding EncoderCodecOptions}"
-                                                  SelectedValue="{Binding SelectedEncoderCodec}"
-                                                  SelectedValuePath="Value" DisplayMemberPath="DisplayName"
-                                                  FontSize="11" Padding="4,2"/>
-                                        <TextBlock Grid.Column="2" Text="{Binding Encoder_Quality, Source={x:Static loc:LocalizationManager.Instance}}"
-                                                   VerticalAlignment="Center" Margin="15,0,8,0" FontSize="11"/>
-                                        <ComboBox Grid.Column="3" ItemsSource="{Binding EncoderQualityOptions}"
-                                                  SelectedValue="{Binding SelectedEncoderQuality}"
-                                                  SelectedValuePath="Value" DisplayMemberPath="DisplayName"
-                                                  FontSize="11" Padding="4,2"/>
-                                        <Button Grid.Column="4" Content="{Binding Encoder_Apply, Source={x:Static loc:LocalizationManager.Instance}}"
-                                                Command="{Binding ApplyEncoderSettingsCommand}"
-                                                Padding="8,2" Margin="10,0,0,0" FontSize="11"/>
-                                    </Grid>
-                                    <TextBlock Text="{Binding ExternalEncoderStatus}" FontSize="10" Foreground="Gray"
-                                               TextWrapping="Wrap" Margin="0,5,0,0"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </GroupBox>
+                        <!-- Кнопка сохранения -->
+                        <Button Content="{Binding Settings_Save, Source={x:Static loc:LocalizationManager.Instance}}"
+                                Command="{Binding SaveSettingsCommand}"
+                                HorizontalAlignment="Left"
+                                Padding="20,8" Margin="0,5,0,0"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
