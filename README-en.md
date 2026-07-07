@@ -6,6 +6,7 @@ A free Windows utility for managing Bluetooth audio profiles (A2DP/HFP). Solves 
 
 > Personal fork of [Yumash/A2DP-Commander](https://github.com/Yumash/A2DP-Commander).
 > This version is maintained at [icelol/A2DP-Commander](https://github.com/icelol/A2DP-Commander).
+> Ready-to-download build: [A2DP Commander v1.1.0-icelol.1](https://github.com/icelol/A2DP-Commander/releases/tag/v1.1.0-icelol.1).
 >
 > The original project is MIT licensed. Original attribution is preserved in [LICENSE](LICENSE).
 
@@ -226,7 +227,7 @@ If you try to play audio immediately after connection, you might experience a br
 
 ### From Release (Recommended)
 
-1. Download the latest release from the [Releases](https://github.com/icelol/A2DP-Commander/releases) page
+1. Download `A2DP-Commander-v1.1.0-icelol.1-win-x64.zip` from [A2DP Commander v1.1.0-icelol.1](https://github.com/icelol/A2DP-Commander/releases/tag/v1.1.0-icelol.1)
 2. Choose your version:
    - `A2DP-Commander-vX.X.X-win-x64.zip` - Requires .NET 8 Runtime installed (~9 MB)
    - `A2DP-Commander-vX.X.X-win-x64-self-contained.zip` - Includes .NET Runtime (~66 MB)

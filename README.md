@@ -6,6 +6,7 @@
 
 > Это персональный форк проекта [Yumash/A2DP-Commander](https://github.com/Yumash/A2DP-Commander).
 > Репозиторий этой версии: [icelol/A2DP-Commander](https://github.com/icelol/A2DP-Commander).
+> Готовая сборка для скачивания: [A2DP Commander v1.1.0-icelol.1](https://github.com/icelol/A2DP-Commander/releases/tag/v1.1.0-icelol.1).
 >
 > Оригинальный проект распространяется по лицензии MIT. Авторство оригинальной версии сохранено в файле [LICENSE](LICENSE).
 
@@ -229,7 +230,7 @@ A2DP Commander может применить системные оптимиза
 
 ### Из релиза (рекомендуется)
 
-1. Скачайте последний релиз со страницы [Releases](https://github.com/icelol/A2DP-Commander/releases)
+1. Скачайте готовый архив `A2DP-Commander-v1.1.0-icelol.1-win-x64.zip` со страницы [A2DP Commander v1.1.0-icelol.1](https://github.com/icelol/A2DP-Commander/releases/tag/v1.1.0-icelol.1)
 2. Распакуйте архив в любую папку
 3. Запустите `A2DP-Commander.exe`
 4. Программа появится в системном трее (область уведомлений)
